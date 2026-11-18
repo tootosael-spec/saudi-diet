@@ -62,6 +62,10 @@ export default {
     return withCors(json({error:"المسار غير موجود"},404));
    } catch(e){ return withCors(json({error:"حدث خطأ في الخادم",detail:env.ENVIRONMENT==="development"?e.message:undefined},500)); }
   }
+  if(path==="/saudi-diet-control" || path==="/saudi-diet-control/"){
+   const target=new URL("/admin.html",url);
+   return env.ASSETS.fetch(new Request(target,req));
+  }
   return env.ASSETS.fetch(req);
  }
 };
