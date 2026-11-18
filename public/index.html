@@ -107,8 +107,15 @@ function updateCart(){let count=cart.reduce((a,x)=>a+x.qty,0),total=cart.reduce(
 function removeItem(i){cart.splice(i,1);updateCart();renderMeals()}function cartQty(i,delta){if(!cart[i])return;cart[i].qty+=delta;if(cart[i].qty<=0)cart.splice(i,1);updateCart();renderMeals()}
 function openCart(){const modal=document.getElementById('cartModal');if(!modal.classList.contains('show')){history.pushState({...history.state,__sdCartOpen:true},'',location.href);modal.classList.add('show')}enableOrderButton();const msg=document.getElementById("orderMsg");if(msg)msg.textContent="";updateCart()}
 function closeCart(){const modal=document.getElementById('cartModal');if(!modal.classList.contains('show'))return;modal.classList.remove('show');if(history.state&&history.state.__sdCartOpen)history.back()}
-function cancelOrder(){cart.length=0;updateCart();renderMeals();const notes=document.getElementById("notes");if(notes)notes.value="";const msg=document.getElementById("orderMsg");if(msg)msg.textContent="تم إلغاء الطلب وإفراغ السلة بالكامل.";const confirmButton=document.querySelector("#cartModal button[onclick=\"sendOrder()\"]");if(confirmButton)confirmButton.disabled=true;}
-function enableOrderButton(){const confirmButton=document.querySelector("#cartModal button[onclick=\"sendOrder()\"]");if(confirmButton)confirmButton.disabled=false;}
+function cancelOrder(){
+  cart.splice(0,cart.length);
+  const notes=document.getElementById("notes");if(notes)notes.value="";
+  updateCart();renderMeals();
+  const msg=document.getElementById("orderMsg");if(msg)msg.textContent="تم إلغاء الطلب وإفراغ السلة.";
+  const modal=document.getElementById("cartModal");if(modal)modal.classList.remove("show");
+  if(history.state&&history.state.__sdCartOpen){const cleanState={...history.state};delete cleanState.__sdCartOpen;history.replaceState(cleanState,"",location.href);}
+}
+function enableOrderButton(){}
 window.addEventListener('popstate',()=>{const modal=document.getElementById('cartModal');if(modal&&modal.classList.contains('show'))modal.classList.remove('show')});
 async function sendOrder(){const notes=document.getElementById('notes').value.trim(),msg=document.getElementById('orderMsg');if(!cart.length){msg.textContent='أضف منتجات للسلة أولاً.';return}const total=cart.reduce((a,x)=>a+x.price*x.qty,0);const order={customer_name:'',customer_phone:'',order_type:cart.some(x=>x.type==='plan')?'subscription':'single',items:cart,total,notes};try{const r=await fetch('/api/orders',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(order)});const data=await r.json();if(!r.ok)throw Error(data.error||'تعذر حفظ الطلب');const lines=cart.map(x=>x.name+' × '+x.qty+' = '+money(x.price*x.qty)+' ر.س');const text='مرحباً سعودي دايت، لدي طلب جديد رقم '+data.order_id+'\n'+lines.join('\n')+'\nالإجمالي: '+money(total)+' ر.س\nملاحظات: '+notes;const wa=(store.whatsapp||'').replace(/\D/g,'');if(!wa){msg.textContent='تم حفظ الطلب. أضف رقم واتساب الصحيح من لوحة التحكم لتفعيل الإرسال المباشر.';return}const encoded=encodeURIComponent(text);const ua=navigator.userAgent||'';if(/Android/i.test(ua)){window.location.href='intent://send?phone='+wa+'&text='+encoded+'#Intent;scheme=whatsapp;package=com.whatsapp;end'}else if(/iPhone|iPad|iPod/i.test(ua)){window.location.href='whatsapp://send?phone='+wa+'&text='+encoded}else{window.open('https://wa.me/'+wa+'?text='+encoded,'_blank')}cart=[];updateCart();msg.textContent='تم تجهيز طلبك عبر واتساب العادي.'}catch(e){msg.textContent=e.message}}
 init();
