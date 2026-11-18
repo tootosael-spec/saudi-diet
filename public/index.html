@@ -54,6 +54,27 @@ footer{color:#b6c3b9}
 .desc{color:#f0f6f1!important;font-size:14px;line-height:1.65;min-height:68px;max-height:68px;-webkit-line-clamp:3;font-weight:500;opacity:1;text-shadow:0 1px 2px rgba(0,0,0,.35)}
 @media(max-width:600px){.desc{font-size:13px;line-height:1.6;min-height:63px;max-height:63px;-webkit-line-clamp:3}}
 
+
+/* Stabilize meal card layout on narrow screens */
+.meal{min-width:0}
+.mealbody{min-width:0}
+.meal h3,.desc{overflow-wrap:anywhere}
+@media(max-width:600px){
+  .mealfoot{
+    display:grid;
+    grid-template-columns:minmax(0,1fr);
+    justify-items:start;
+    align-items:center;
+    gap:8px;
+    min-height:0;
+    flex-direction:initial;
+  }
+  .mealfoot .price{font-size:16px;line-height:1.4;white-space:nowrap}
+  .mealfoot .qtyctrl{max-width:100%;gap:6px;padding:3px 5px}
+  .mealfoot .qtyctrl button{width:28px;height:28px;flex:0 0 28px}
+  .macros{height:auto;max-height:48px;min-height:44px;overflow:hidden}
+}
+
 </style></head>
 <body>
 <header class="top wrap"><div><div class="brand">سعودي <span>دايت</span></div><div class="tag" id="tagline">غذاؤك قوتك</div></div><button class="btn secondary" id="installBtn" type="button" onclick="installApp()">تنزيل التطبيق</button></header>
