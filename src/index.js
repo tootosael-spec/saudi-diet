@@ -12,7 +12,7 @@ export default {
    try {
     if(path==="/api/store" && method==="GET"){
      const keys=["store_name","tagline","whatsapp","delivery_fee","free_delivery_minimum","hero_title","hero_subtitle"];
-     const settings={}; for(const k of keys) settings[k]=await setting(env.DB,k);
+     const settings={}; for(const k of keys) settings[k]=await setting(env.DB,k,k==="whatsapp"?"96653243108":"");
      return withCors(json({settings}));
     }
     if(path==="/api/catalog" && method==="GET"){
