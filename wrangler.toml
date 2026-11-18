@@ -10,5 +10,5 @@ run_worker_first = ["/api/*", "/admin*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "saudi-diet"
-database_id = "REPLACE_WITH_CLOUDFLARE_D1_DATABASE_ID"
+database_id = "0e39c0b5-24b0-4c7e-ba18-bdce95067367"
 migrations_dir = "migrations"
