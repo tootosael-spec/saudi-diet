@@ -52,6 +52,48 @@ footer{color:#b6c3b9}
 .desc{color:#f0f6f1!important;font-size:14px;line-height:1.65;min-height:68px;max-height:68px;-webkit-line-clamp:3;font-weight:500;opacity:1;text-shadow:0 1px 2px rgba(0,0,0,.35)}
 @media(max-width:600px){.desc{font-size:13px;line-height:1.6;min-height:63px;max-height:63px;-webkit-line-clamp:3}}
 
+
+/* Refined meal cards: clearer hierarchy, nutrition chips and touch targets */
+.meal{
+  border:1px solid rgba(181,243,74,.24);
+  border-radius:20px;
+  overflow:hidden;
+  transition:border-color .18s ease,transform .18s ease;
+}
+.meal-media{height:178px;min-height:178px;flex-basis:178px}
+.meal-media img{transition:transform .25s ease}
+.mealbody{padding:15px;gap:7px}
+.meal h3{font-size:17px;line-height:1.45;min-height:2.9em;margin:0;color:#fff}
+.desc{font-size:13px;line-height:1.65;min-height:64px;max-height:64px;color:#e0e9e2!important}
+.macros{display:flex;gap:6px;min-height:0;max-height:none;margin:3px 0 8px;overflow:visible}
+.macros span{
+  display:inline-flex;align-items:center;
+  padding:5px 8px;border-radius:8px;
+  background:rgba(255,255,255,.055);
+  border:1px solid rgba(255,255,255,.09);
+  color:#d5e1d7;font-size:10px;white-space:nowrap
+}
+.mealfoot{padding-top:10px;border-top:1px solid rgba(255,255,255,.09);min-height:46px}
+.price{font-size:18px;font-weight:900;white-space:nowrap}
+.qtyctrl{padding:4px 6px;gap:7px;border-radius:11px}
+.qtyctrl button{width:31px;height:31px;font-size:20px;touch-action:manipulation}
+.qtyctrl b{font-size:14px}
+@media(hover:hover){
+ .meal:hover{border-color:rgba(181,243,74,.58);transform:translateY(-2px)}
+ .meal:hover .meal-media img{transform:scale(1.025)}
+}
+@media(max-width:600px){
+ .meal-media{height:145px;min-height:145px;flex-basis:145px}
+ .mealbody{padding:11px;gap:6px}
+ .meal h3{font-size:14px;line-height:1.45;min-height:2.9em}
+ .desc{font-size:12px;line-height:1.6;min-height:58px;max-height:58px}
+ .macros{gap:4px;margin:2px 0 6px}
+ .macros span{font-size:9px;padding:4px 6px;border-radius:7px}
+ .mealfoot{padding-top:8px;min-height:42px}
+ .price{font-size:15px}
+ .qtyctrl{gap:5px;padding:3px 4px}
+ .qtyctrl button{width:29px;height:29px;font-size:19px}
+}
 </style></head>
 <body>
 <header class="top wrap"><div><div class="brand">سعودي <span>دايت</span></div><div class="tag" id="tagline">غذاؤك قوتك</div></div><button class="btn secondary" id="installBtn" type="button" onclick="installApp()">تنزيل التطبيق</button></header>
