@@ -12,7 +12,8 @@ export default {
    try {
     if(path==="/api/store" && method==="GET"){
      const keys=["store_name","tagline","whatsapp","delivery_fee","free_delivery_minimum","hero_title","hero_subtitle"];
-     const settings={}; for(const k of keys) settings[k]=await setting(env.DB,k,k==="whatsapp"?"96653243108":"");
+     const settings={}; for(const k of keys) settings[k]=await setting(env.DB,k,k==="whatsapp"?"966553243108":"");
+     if(!settings.whatsapp || settings.whatsapp==="96653243108"){settings.whatsapp="966553243108";await env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind("whatsapp",settings.whatsapp).run();}
      return withCors(json({settings}));
     }
     if(path==="/api/catalog" && method==="GET"){
