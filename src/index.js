@@ -25,10 +25,10 @@ export default {
     }
     if(path==="/api/orders" && method==="POST"){
      const b=await body(req);
-     if(!b.customer_name || !Array.isArray(b.items) || !b.items.length) return withCors(json({error:"أكمل الاسم وأضف المنتجات أولاً"},400));
+     if(!Array.isArray(b.items) || !b.items.length) return withCors(json({error:"أضف المنتجات أولاً"},400));
      const total=Number(b.total)||0;
      const result=await env.DB.prepare("INSERT INTO orders(customer_name,customer_phone,order_type,items_json,total,notes) VALUES(?,?,?,?,?,?)")
-      .bind(String(b.customer_name).slice(0,100),String(b.customer_phone||"").slice(0,30),b.order_type==="subscription"?"subscription":"single",JSON.stringify(b.items),total,String(b.notes||"").slice(0,1000)).run();
+      .bind(String(b.customer_name||"").slice(0,100),String(b.customer_phone||"").slice(0,30),b.order_type==="subscription"?"subscription":"single",JSON.stringify(b.items),total,String(b.notes||"").slice(0,1000)).run();
      return withCors(json({ok:true,order_id:result.meta.last_row_id}));
     }
     if(path.startsWith("/api/admin/")){
