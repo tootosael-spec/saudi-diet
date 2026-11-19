@@ -30,6 +30,26 @@ async function subscriptionStatus(env){
   return {active:s.active===true,unavailable:false,reason:null,status:s.status||"not_started",starts_at:s.starts_at||null,ends_at:s.ends_at||null,plan_name:s.plan_name||null,duration_months:s.duration_months??null,price_sar:s.price_sar??null,trial_used:s.trial_used===true,trial_active:s.trial_active===true,next_plan_name:s.selected_plan?.name||null,plans:Array.isArray(s.plans)?s.plans:[],payment_details:s.payment_details||null,pending_payment:s.pending_payment||null,diagnostics};
  }catch(e){return {active:false,unavailable:true,reason:e.message==="credentials_missing"?"credentials_missing":"center_unreachable",diagnostics};}
 }
+async function storeSubscriptionStatus(env){
+ const storeId=String(env.STORE_ID||"").trim();
+ const apiKey=String(env.STORE_API_KEY||"").trim();
+ const centerDomain=String(env.CENTER_DOMAIN||"").trim().replace(/\\/+$/, "");
+ if(!storeId||!apiKey||!centerDomain) return {active:false,unavailable:true,reason:"store_api_credentials_missing"};
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),5000);
+ try{
+  const endpoint=centerDomain+"/api/check-subscription?store_id="+encodeURIComponent(storeId);
+  const response=await fetch(endpoint,{method:"GET",headers:{"X-API-Key":apiKey,"accept":"application/json"},signal:controller.signal});
+  const result=await response.json().catch(()=>null);
+  if(response.status===404 || response.status>=500) return {active:false,unavailable:true,reason:"center_endpoint_unavailable"};
+  if(!response.ok || !result || typeof result.active!=="boolean") return {active:false,unavailable:response.status!==400&&response.status!==401,reason:result?.status||"invalid_center_response"};
+  return {active:result.active===true,unavailable:false,reason:result.status||null,plan:result.plan||null,expires_at:result.expires_at||null,status:result.status||null};
+ }catch(e){
+  return {active:false,unavailable:true,reason:e.name==="AbortError"?"center_timeout":"center_unreachable"};
+ }finally{
+  clearTimeout(timeout);
+ }
+}
 function subscriptionPage(unavailable=false){
  const title=unavailable?"تعذر التحقق من الاشتراك":"المتجر متوقف مؤقتاً";
  const message=unavailable?"تعذر الاتصال بخدمة الاشتراكات حالياً. يرجى المحاولة بعد قليل.":"انتهت فترة الاشتراك أو تم إيقافه. يرجى التواصل مع إدارة المتجر لتجديد الاشتراك.";
@@ -44,9 +64,17 @@ export default {
   // Only validate the central subscription when a customer submits an order.
   const protectedOrder=path==="/api/orders" && method==="POST";
   if(protectedOrder){
-   const subscription=await subscriptionStatus(env);
-   if(!subscription.active){
-    return withCors(json({error:subscription.unavailable?"تعذر التحقق من الاشتراك حالياً":"اشتراك المتجر غير نشط",subscription_inactive:true},subscription.unavailable?503:402));
+   const current=await storeSubscriptionStatus(env);
+   if(!current.unavailable && !current.active){
+    return withCors(json({error:"اشتراك متجر سعودي دايت منتهي",message:"اشتراك متجر سعودي دايت منتهي",subscription_inactive:true,renew_url:String(env.CENTER_DOMAIN||"").replace(/\\/+$/,"")+"/renew",expires_at:current.expires_at||null},402));
+   }
+   if(current.unavailable){
+    // Backward compatibility: use the existing HMAC integration if the new store-key API cannot be reached.
+    // If neither integration can be reached, fail open so customers are not blocked by an outage.
+    const legacy=await subscriptionStatus(env);
+    if(!legacy.active && !legacy.unavailable){
+     return withCors(json({error:"اشتراك متجر سعودي دايت غير نشط",subscription_inactive:true,renew_url:String(env.CENTER_DOMAIN||env.SUBSCRIPTION_CENTER_URL||"").replace(/\\/+$/,"")+"/renew"},402));
+    }
    }
   }
   if(path.startsWith("/api/")){
