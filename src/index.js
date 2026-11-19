@@ -33,7 +33,7 @@ async function subscriptionStatus(env){
 async function storeSubscriptionStatus(env){
  const storeId=String(env.STORE_ID||"").trim();
  const apiKey=String(env.STORE_API_KEY||"").trim();
- const centerDomain=String(env.CENTER_DOMAIN||"").trim().replace(/\\/+$/, "");
+ const centerDomain=String(env.CENTER_DOMAIN||"").trim().replace(/\/+$/, "");
  if(!storeId||!apiKey||!centerDomain) return {active:false,unavailable:true,reason:"store_api_credentials_missing"};
  const controller=new AbortController();
  const timeout=setTimeout(()=>controller.abort(),5000);
@@ -66,14 +66,14 @@ export default {
   if(protectedOrder){
    const current=await storeSubscriptionStatus(env);
    if(!current.unavailable && !current.active){
-    return withCors(json({error:"اشتراك متجر سعودي دايت منتهي",message:"اشتراك متجر سعودي دايت منتهي",subscription_inactive:true,renew_url:String(env.CENTER_DOMAIN||"").replace(/\\/+$/,"")+"/renew",expires_at:current.expires_at||null},402));
+    return withCors(json({error:"اشتراك متجر سعودي دايت منتهي",message:"اشتراك متجر سعودي دايت منتهي",subscription_inactive:true,renew_url:String(env.CENTER_DOMAIN||"").replace(/\/+$/,"")+"/renew",expires_at:current.expires_at||null},402));
    }
    if(current.unavailable){
     // Backward compatibility: use the existing HMAC integration if the new store-key API cannot be reached.
     // If neither integration can be reached, fail open so customers are not blocked by an outage.
     const legacy=await subscriptionStatus(env);
     if(!legacy.active && !legacy.unavailable){
-     return withCors(json({error:"اشتراك متجر سعودي دايت غير نشط",subscription_inactive:true,renew_url:String(env.CENTER_DOMAIN||env.SUBSCRIPTION_CENTER_URL||"").replace(/\\/+$/,"")+"/renew"},402));
+     return withCors(json({error:"اشتراك متجر سعودي دايت غير نشط",subscription_inactive:true,renew_url:String(env.CENTER_DOMAIN||env.SUBSCRIPTION_CENTER_URL||"").replace(/\/+$/,"")+"/renew"},402));
     }
    }
   }
