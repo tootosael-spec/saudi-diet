@@ -4,16 +4,31 @@ function withCors(r){ const h=new Headers(r.headers); for(const [k,v] of Object.
 async function body(req){ try{return await req.json()}catch{return {}} }
 async function setting(db,key,fallback=""){ const row=await db.prepare("SELECT value FROM settings WHERE key=?").bind(key).first(); return row?.value ?? fallback; }
 function authorized(req,env){ const auth=req.headers.get("authorization")||""; return !!env.ADMIN_PASSWORD && auth === "Bearer "+env.ADMIN_PASSWORD; }
+async function signedCenterRequest(env,path,method="GET",payload){
+ const key=env.SUBSCRIPTION_PROJECT_KEY||"",secret=env.SUBSCRIPTION_VERIFICATION_SECRET||"";
+ if(!key||!secret) throw new Error("credentials_missing");
+ const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\/+$/, "");
+ const timestamp=String(Math.floor(Date.now()/1000));
+ const rawBody=payload===undefined?"":JSON.stringify(payload);
+ const value=method+"\n"+path+"\n"+timestamp+"\n"+rawBody;
+ const cryptoKey=await crypto.subtle.importKey("raw",new TextEncoder().encode(secret),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
+ const signature=await crypto.subtle.sign("HMAC",cryptoKey,new TextEncoder().encode(value));
+ const hex=[...new Uint8Array(signature)].map(x=>x.toString(16).padStart(2,"0")).join("");
+ const headers={"X-Project-Key":key,"X-Timestamp":timestamp,"X-Signature":hex};
+ if(payload!==undefined) headers["content-type"]="application/json";
+ const response=await fetch(centerUrl+path,{method,headers,body:payload===undefined?undefined:rawBody});
+ const result=await response.json().catch(()=>({error:"invalid_center_response"}));
+ return {response,result};
+}
 async function subscriptionStatus(env){
- const diagnostics={project_key_configured:!!env.SUBSCRIPTION_PROJECT_KEY,verification_token_configured:!!env.SUBSCRIPTION_VERIFICATION_TOKEN};
- if(!diagnostics.project_key_configured || !diagnostics.verification_token_configured) return {active:false,unavailable:true,reason:"credentials_missing",diagnostics};
- try {
-  const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\/+$/, "");
-  const response=await fetch(centerUrl+"/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
-  const result=await response.json().catch(()=>({}));
-  if(!response.ok) return {active:false,unavailable:response.status>=500,reason:result.reason||result.error||(response.status===404?"invalid_project":"verification_failed"),diagnostics};
-  return {active:result.active===true,unavailable:false,reason:result.reason||null,status:result.status||"inactive",starts_at:result.starts_at||null,ends_at:result.ends_at||null,plan_name:result.plan_name||null,duration_months:result.duration_months??null,price_sar:result.price_sar??null,trial_used:result.trial_used===true,trial_active:result.trial_active===true,next_plan_name:result.next_plan_name||null,next_starts_at:result.next_starts_at||null,next_ends_at:result.next_ends_at||null,plans:Array.isArray(result.plans)?result.plans:[],payment_details:result.payment_details||null,diagnostics};
- } catch { return {active:false,unavailable:true,reason:"center_unreachable",diagnostics}; }
+ const diagnostics={project_key_configured:!!env.SUBSCRIPTION_PROJECT_KEY,verification_token_configured:!!env.SUBSCRIPTION_VERIFICATION_TOKEN,verification_secret_configured:!!env.SUBSCRIPTION_VERIFICATION_SECRET};
+ if(!diagnostics.project_key_configured||!diagnostics.verification_token_configured||!diagnostics.verification_secret_configured) return {active:false,unavailable:true,reason:"credentials_missing",diagnostics};
+ try{
+  const {response,result}=await signedCenterRequest(env,"/api/v1/subscription/status","GET");
+  if(!response.ok) return {active:false,unavailable:response.status>=500,reason:result.error||"verification_failed",diagnostics};
+  const s=result.subscription||{};
+  return {active:s.active===true,unavailable:false,reason:null,status:s.status||"not_started",starts_at:s.starts_at||null,ends_at:s.ends_at||null,plan_name:s.plan_name||null,duration_months:s.duration_months??null,price_sar:s.price_sar??null,trial_used:s.trial_used===true,trial_active:s.trial_active===true,next_plan_name:s.selected_plan?.name||null,plans:Array.isArray(s.plans)?s.plans:[],payment_details:s.payment_details||null,pending_payment:s.pending_payment||null,diagnostics};
+ }catch(e){return {active:false,unavailable:true,reason:e.message==="credentials_missing"?"credentials_missing":"center_unreachable",diagnostics};}
 }
 function subscriptionPage(unavailable=false){
  const title=unavailable?"تعذر التحقق من الاشتراك":"المتجر متوقف مؤقتاً";
@@ -69,10 +84,8 @@ export default {
      if(path==="/api/admin/subscription/choose" && method==="POST"){
       const b=await body(req);
       if(!b.plan_id || !Number.isInteger(Number(b.plan_id))) return withCors(json({error:"اختر خطة صحيحة"},400));
-      if(!env.SUBSCRIPTION_PROJECT_KEY || !env.SUBSCRIPTION_VERIFICATION_TOKEN) return withCors(json({error:"بيانات ربط الاشتراك غير مكتملة"},503));
-      const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\/+$/, "");
-      const response=await fetch(centerUrl+"/api/request-plan",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN,plan_id:Number(b.plan_id)})});
-      const result=await response.json().catch(()=>({error:"invalid_center_response"}));
+      if(!env.SUBSCRIPTION_PROJECT_KEY || !env.SUBSCRIPTION_VERIFICATION_TOKEN || !env.SUBSCRIPTION_VERIFICATION_SECRET) return withCors(json({error:"بيانات ربط الاشتراك غير مكتملة"},503));
+      const {response,result}=await signedCenterRequest(env,"/api/v1/subscription/request-plan","POST",{plan_id:Number(b.plan_id)});
       return withCors(json(result,response.status));
      }
      if(path==="/api/admin/subscription" && method==="GET"){
