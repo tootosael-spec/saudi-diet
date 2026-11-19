@@ -4,9 +4,33 @@ function withCors(r){ const h=new Headers(r.headers); for(const [k,v] of Object.
 async function body(req){ try{return await req.json()}catch{return {}} }
 async function setting(db,key,fallback=""){ const row=await db.prepare("SELECT value FROM settings WHERE key=?").bind(key).first(); return row?.value ?? fallback; }
 function authorized(req,env){ const auth=req.headers.get("authorization")||""; return !!env.ADMIN_PASSWORD && auth === "Bearer "+env.ADMIN_PASSWORD; }
+async function subscriptionStatus(env){
+ if(!env.SUBSCRIPTION_PROJECT_KEY || !env.SUBSCRIPTION_VERIFICATION_TOKEN) return {active:false, unavailable:true};
+ try {
+  const response=await fetch("https://subscription-center.tootosael.workers.dev/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
+  if(!response.ok) return {active:false,unavailable:response.status>=500};
+  const result=await response.json();
+  return {active:result.active===true,unavailable:false};
+ } catch { return {active:false,unavailable:true}; }
+}
+function subscriptionPage(unavailable=false){
+ const title=unavailable?"تعذر التحقق من الاشتراك":"المتجر متوقف مؤقتاً";
+ const message=unavailable?"تعذر الاتصال بخدمة الاشتراكات حالياً. يرجى المحاولة بعد قليل.":"انتهت فترة الاشتراك أو تم إيقافه. يرجى التواصل مع إدارة المتجر لتجديد الاشتراك.";
+ return new Response(`<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080d0b"><title>${title} | سعودي دايت</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#080d0b;color:#f4f8f4;font-family:system-ui,sans-serif;text-align:center;padding:24px;box-sizing:border-box"><main style="max-width:440px;border:1px solid #40552f;border-radius:22px;padding:30px;background:#101a14"><div style="font-size:42px;margin-bottom:12px">🥗</div><h1 style="color:#b5f34a;font-size:25px">${title}</h1><p style="line-height:1.9;color:#d6e2d8">${message}</p></main></body></html>`,{status:unavailable?503:402,headers:{"content-type":"text/html; charset=utf-8","cache-control":"no-store"}});
+}
 export default {
  async fetch(req,env){
   const url=new URL(req.url), path=url.pathname, method=req.method;
+  const controlHost=url.hostname.startsWith("saudi-diet-control.");
+  const customerApi=path==="/api/store" || path==="/api/catalog" || path==="/api/orders";
+  const customerPage=!controlHost && (path==="/" || path==="/index.html");
+  if(!controlHost && (customerApi || customerPage)){
+   const subscription=await subscriptionStatus(env);
+   if(!subscription.active){
+    if(customerApi) return withCors(json({error:subscription.unavailable?"تعذر التحقق من الاشتراك حالياً":"اشتراك المتجر غير نشط",subscription_inactive:true},subscription.unavailable?503:402));
+    return subscriptionPage(subscription.unavailable);
+   }
+  }
   if(method==="OPTIONS") return withCors(new Response(null,{status:204}));
   if(path.startsWith("/api/")){
    try {
