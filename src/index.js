@@ -22,16 +22,16 @@ export default {
  async fetch(req,env){
   const url=new URL(req.url), path=url.pathname, method=req.method;
   const controlHost=url.hostname.startsWith("saudi-diet-control.");
-  const customerApi=path==="/api/store" || path==="/api/catalog" || path==="/api/orders";
-  const customerPage=!controlHost && (path==="/" || path==="/index.html");
-  if(!controlHost && (customerApi || customerPage)){
+  if(method==="OPTIONS") return withCors(new Response(null,{status:204}));
+  // Keep the storefront catalog and subscription plans visible to customers.
+  // Only validate the central subscription when a customer submits an order.
+  const protectedOrder=!controlHost && path==="/api/orders" && method==="POST";
+  if(protectedOrder){
    const subscription=await subscriptionStatus(env);
    if(!subscription.active){
-    if(customerApi) return withCors(json({error:subscription.unavailable?"تعذر التحقق من الاشتراك حالياً":"اشتراك المتجر غير نشط",subscription_inactive:true},subscription.unavailable?503:402));
-    return subscriptionPage(subscription.unavailable);
+    return withCors(json({error:subscription.unavailable?"تعذر التحقق من الاشتراك حالياً":"اشتراك المتجر غير نشط",subscription_inactive:true},subscription.unavailable?503:402));
    }
   }
-  if(method==="OPTIONS") return withCors(new Response(null,{status:204}));
   if(path.startsWith("/api/")){
    try {
     if(path==="/api/store" && method==="GET"){
