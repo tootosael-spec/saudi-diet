@@ -90,7 +90,7 @@ export default {
       }catch(e){return withCors(json({error:e.message==="trial_still_active"?"التجربة المجانية ما زالت سارية":e.message==="payment_already_pending"?"لديك طلب تحويل قيد المراجعة":"تعذر إرسال طلب الدفع إلى المركز"},409))}
      }
      if(path==="/api/admin/subscription" && method==="GET"){
-      const status=await subscriptionStatus(env);
+      const status=await subscriptionStatus(env,{activate:true});
       return withCors(json(status));
      }
      if(path==="/api/admin/overview" && method==="GET"){
