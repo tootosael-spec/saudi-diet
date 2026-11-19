@@ -57,6 +57,13 @@ export default {
      return withCors(json({ok:true,order_id:result.meta.last_row_id}));
     }
     if(path.startsWith("/api/admin/")){
+     if(path==="/api/admin/login" && method==="POST"){
+      const b=await body(req);
+      if(!env.ADMIN_PASSWORD) return withCors(json({error:"كلمة مرور اللوحة غير مضبوطة في إعدادات الخادم"},503));
+      if(String(b.password||"")!==env.ADMIN_PASSWORD) return withCors(json({error:"كلمة المرور غير صحيحة"},401));
+      return withCors(json({ok:true}));
+     }
+     if(!authorized(req,env)) return withCors(json({error:"يلزم تسجيل الدخول إلى لوحة التحكم"},401));
      if(path==="/api/admin/overview" && method==="GET"){
       const [orders,meals,plans]=await Promise.all([env.DB.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 100").all(),env.DB.prepare("SELECT * FROM meals ORDER BY id DESC").all(),env.DB.prepare("SELECT * FROM plans ORDER BY id DESC").all()]);
       return withCors(json({orders:orders.results,meals:meals.results,plans:plans.results}));
