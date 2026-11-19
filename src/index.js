@@ -5,13 +5,14 @@ async function body(req){ try{return await req.json()}catch{return {}} }
 async function setting(db,key,fallback=""){ const row=await db.prepare("SELECT value FROM settings WHERE key=?").bind(key).first(); return row?.value ?? fallback; }
 function authorized(req,env){ const auth=req.headers.get("authorization")||""; return !!env.ADMIN_PASSWORD && auth === "Bearer "+env.ADMIN_PASSWORD; }
 async function subscriptionStatus(env){
- if(!env.SUBSCRIPTION_PROJECT_KEY || !env.SUBSCRIPTION_VERIFICATION_TOKEN) return {active:false, unavailable:true};
+ const diagnostics={project_key_configured:!!env.SUBSCRIPTION_PROJECT_KEY,verification_token_configured:!!env.SUBSCRIPTION_VERIFICATION_TOKEN};
+ if(!diagnostics.project_key_configured || !diagnostics.verification_token_configured) return {active:false,unavailable:true,reason:"credentials_missing",diagnostics};
  try {
   const response=await fetch("https://subscription-center.tootosael.workers.dev/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
   const result=await response.json().catch(()=>({}));
-  if(!response.ok) return {active:false,unavailable:response.status>=500,reason:result.reason||result.error||(response.status===404?"invalid_project":"verification_failed")};
-  return {active:result.active===true,unavailable:false,reason:result.reason||null,status:result.status||"inactive",starts_at:result.starts_at||null,ends_at:result.ends_at||null,plan_name:result.plan_name||null,duration_months:result.duration_months??null,price_sar:result.price_sar??null,payment_details:result.payment_details||null};
- } catch { return {active:false,unavailable:true}; }
+  if(!response.ok) return {active:false,unavailable:response.status>=500,reason:result.reason||result.error||(response.status===404?"invalid_project":"verification_failed"),diagnostics};
+  return {active:result.active===true,unavailable:false,reason:result.reason||null,status:result.status||"inactive",starts_at:result.starts_at||null,ends_at:result.ends_at||null,plan_name:result.plan_name||null,duration_months:result.duration_months??null,price_sar:result.price_sar??null,payment_details:result.payment_details||null,diagnostics};
+ } catch { return {active:false,unavailable:true,reason:"center_unreachable",diagnostics}; }
 }
 function subscriptionPage(unavailable=false){
  const title=unavailable?"تعذر التحقق من الاشتراك":"المتجر متوقف مؤقتاً";
