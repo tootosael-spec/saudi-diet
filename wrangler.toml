@@ -15,3 +15,6 @@ migrations_dir = "migrations"
 
 [vars]
 SUBSCRIPTION_CENTER_URL = "https://subscription-center.tootosael.workers.dev"
+
+# Required by Cloudflare Worker Previews; preview bindings can be added separately.
+previews = {}
