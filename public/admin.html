@@ -32,46 +32,48 @@ async function loadMySubscription(){
  const box=$('subscriptionStatus'),plansBox=$('subscriptionPlans'),details=$('subscriptionPaymentDetails');
  try{
   const s=await api('subscription');
-  if(s.reason==='credentials_missing'){
+  if(s.unavailable||s.reason==='credentials_missing'){
    const d=s.diagnostics||{};
-   box.innerHTML='<p>إعدادات الربط غير مكتملة في خادم لوحة التحكم.</p><div class="entry"><strong>مفتاح المشروع</strong><span>'+(d.project_key_configured?'موجود':'غير مضبوط')+'</span></div><div class="entry"><strong>رمز التحقق</strong><span>'+(d.verification_token_configured?'موجود':'غير مضبوط')+'</span></div><p class="muted">لم يتم عرض أي قيمة سرية.</p>';
-   plansBox.innerHTML='';return;
-  }
-  if(s.unavailable||s.reason==='project_key_not_found'||s.reason==='verification_mismatch'||s.reason==='invalid_project'||s.reason==='verification_failed'){
-   box.textContent=s.reason==='credentials_missing'?'بيانات الربط غير مكتملة.':(s.reason==='project_key_not_found'?'مشروع المتجر غير مسجل في مركز الاشتراكات.':(s.reason==='verification_mismatch'?'رمز التحقق لا يطابق بيانات المركز.':'تعذر التحقق من الاتصال بمركز الاشتراكات. حاول لاحقاً.'));
-   plansBox.innerHTML='';return;
+   box.innerHTML='<p>تعذر الاتصال بمركز الاشتراكات أو أن بيانات الربط غير مكتملة.</p><div class="entry"><strong>مفتاح المشروع</strong><span>'+(d.project_key_configured?'موجود':'غير مضبوط')+'</span></div><div class="entry"><strong>السر الخاص</strong><span>'+(d.secret_configured?'موجود':'غير مضبوط')+'</span></div><p class="muted">لم يتم عرض أي قيمة سرية.</p>';
+   plansBox.innerHTML='';details.innerHTML='<h3>بيانات التحويل</h3>';return;
   }
   const dateText=v=>{if(!v)return '—';const d=new Date(v.replace(' ','T')+'Z');return isNaN(d)?'—':d.toLocaleDateString('ar-SA',{year:'numeric',month:'long',day:'numeric'})};
   const daysLeft=v=>{if(!v)return '—';const d=new Date(v.replace(' ','T')+'Z');return isNaN(d)?'—':Math.max(0,Math.ceil((d-Date.now())/86400000))+' يوم'};
   const escSub=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  if(s.status==='not_started'){
-   box.innerHTML='<p>لم يتم اختيار اشتراك لهذا المتجر بعد. اختر شهرياً أو سنوياً لبدء الفترة التجريبية تلقائياً.</p>';
-  }else if(s.status==='trial'){
-   box.innerHTML='<div class="entry"><strong>حالة الاشتراك</strong><span>فترة تجريبية مجانية سارية</span></div><div class="entry"><strong>تنتهي التجربة في</strong><span>'+dateText(s.ends_at)+'</span></div><div class="entry"><strong>المدة المتبقية</strong><span>'+daysLeft(s.ends_at)+'</span></div><div class="entry"><strong>الخطة المختارة بعد التجربة</strong><span>'+escSub(s.next_plan_name||'لم تحدد')+'</span></div>';
+  if(s.status==='trial'){
+   box.innerHTML='<div class="entry"><strong>حالة الاشتراك</strong><span>تجربة مجانية سارية</span></div><div class="entry"><strong>تنتهي التجربة في</strong><span>'+dateText(s.ends_at)+'</span></div><div class="entry"><strong>المتبقي</strong><span>'+daysLeft(s.ends_at)+'</span></div><div class="entry"><strong>الخطة المختارة بعد التجربة</strong><span>'+escSub(s.selected_plan?.name||'لم يتم الاختيار بعد')+'</span></div>';
   }else if(s.status==='active'){
-   box.innerHTML='<div class="entry"><strong>حالة الاشتراك</strong><span>نشط</span></div><div class="entry"><strong>الخطة الحالية</strong><span>'+escSub(s.plan_name||'—')+'</span></div><div class="entry"><strong>تاريخ الانتهاء</strong><span>'+dateText(s.ends_at)+'</span></div><div class="entry"><strong>المدة المتبقية</strong><span>'+daysLeft(s.ends_at)+'</span></div>';
+   box.innerHTML='<div class="entry"><strong>حالة الاشتراك</strong><span>نشط</span></div><div class="entry"><strong>الخطة الحالية</strong><span>'+escSub(s.plan_name||'—')+'</span></div><div class="entry"><strong>تاريخ الانتهاء</strong><span>'+dateText(s.ends_at)+'</span></div><div class="entry"><strong>المتبقي</strong><span>'+daysLeft(s.ends_at)+'</span></div>';
   }else if(s.status==='paused'){
-   box.innerHTML='<p>تم إيقاف اشتراك المتجر من مركز الاشتراكات. تواصل مع إدارة المنصة.</p>';
-  }else if(s.status==='scheduled'){
-   box.innerHTML='<p>تم تسجيل اختيارك تلقائياً، وستبدأ الخطة في '+dateText(s.starts_at)+'.</p><div class="entry"><strong>الخطة</strong><span>'+escSub(s.plan_name||'—')+'</span></div>';
+   box.innerHTML='<p>تم إيقاف المشروع من مركز الاشتراكات. استقبال الطلبات متوقف حتى إعادة تفعيله من الإدارة.</p>';
+  }else if(s.status==='awaiting_payment'){
+   box.innerHTML='<p>انتهت التجربة المجانية. المتجر ظاهر، لكن استقبال طلبات واتساب متوقف حتى تأكيد الدفع.</p><div class="entry"><strong>الخطة المختارة</strong><span>'+escSub(s.selected_plan?.name||'—')+'</span></div><p>يوجد طلب تحويل قيد المراجعة لدى إدارة المنصة.</p>';
   }else{
-   box.innerHTML='<p>انتهت مدة الاشتراك. المتجر ما زال ظاهراً، لكن إرسال الطلبات إلى واتساب متوقف حتى اختيار خطة جديدة.</p>';
+   box.innerHTML='<p>انتهت الفترة المجانية أو الاشتراك. المتجر ما زال ظاهراً، لكن استقبال طلبات واتساب متوقف حتى إتمام الدفع وتأكيده.</p><div class="entry"><strong>الخطة المختارة</strong><span>'+escSub(s.selected_plan?.name||'لم يتم الاختيار بعد')+'</span></div>';
   }
   const available=Array.isArray(s.plans)?s.plans:[];
-  plansBox.innerHTML=available.map(p=>'<div class="entry" style="display:block;flex:1 1 220px"><strong>'+escSub(p.name)+'</strong><p class="muted">'+Number(p.price_sar).toLocaleString('ar-SA')+' ر.س / '+(Number(p.duration_months)===12?'12 شهر':'شهر')+'</p><button type="button" onclick="requestPlan('+Number(p.id)+')">'+(s.trial_used?'اختيار هذه الخطة':'تفعيل التجربة واختيار الخطة')+'</button></div>').join('')||'<p class="muted">خطط الاشتراك غير متاحة حالياً.</p>';
+  plansBox.innerHTML=available.map(p=>'<div class="entry" style="display:block;flex:1 1 220px"><strong>'+escSub(p.name)+'</strong><p class="muted">'+Number(p.price_sar).toLocaleString('ar-SA')+' ر.س / '+(Number(p.duration_months)===12?'12 شهر':'شهر')+'</p><button type="button" onclick="requestPlan('+Number(p.id)+')">'+(Number(s.selected_plan?.id)===Number(p.id)?'الخطة المختارة':'اختيار هذه الخطة')+'</button></div>').join('')||'<p class="muted">خطط الاشتراك غير متاحة حالياً.</p>';
   details.innerHTML='<h3>بيانات التحويل من إدارة المنصة</h3>';
-  if(!s.payment_details){const p=document.createElement('p');p.className='muted';p.textContent='لا توجد بيانات تحويل مضافة حالياً.';details.appendChild(p);}
+  if(!s.payment_details){const p=document.createElement('p');p.className='muted';p.textContent='لم تُضف بيانات التحويل البنكي بعد.';details.appendChild(p);}
   else{
    const labels={bank_name:'البنك',account_name:'صاحب الحساب',iban:'الآيبان',payment_note:'ملاحظة'};
    for(const key of Object.keys(labels)){const value=s.payment_details[key];if(!value)continue;const row=document.createElement('div');row.className='entry';const label=document.createElement('strong');label.textContent=labels[key];const val=document.createElement('span');val.textContent=value;val.dir=key==='iban'?'ltr':'auto';row.append(label,val);details.appendChild(row)}
   }
+  if(s.pending_payment){
+   const note=document.createElement('p');note.className='muted';note.textContent='تم استلام طلب التحويل رقم '+s.pending_payment.id+'، وهو بانتظار مراجعة إدارة المنصة.';details.appendChild(note);
+  }else if(!s.active&&!s.trial_active&&s.selected_plan){
+   const form=document.createElement('form');form.id='subscriptionPaymentForm';
+   form.innerHTML='<label>رقم الحوالة / مرجع التحويل</label><input name="bank_reference" required maxlength="120" placeholder="أدخل رقم العملية البنكية"><label>ملاحظة (اختياري)</label><input name="notes" maxlength="500" placeholder="أي تفاصيل إضافية"><button type="submit">إرسال إثبات التحويل للمراجعة</button>';
+   form.onsubmit=async e=>{e.preventDefault();const b=Object.fromEntries(new FormData(form));try{await api('subscription/payment','POST',b);alert('تم إرسال طلب الدفع إلى مركز الاشتراكات. سيتم التفعيل بعد تأكيد الإدارة.');await loadMySubscription()}catch(err){alert(err.message)}};
+   details.appendChild(form);
+  }
  }catch(e){box.textContent=e.message}
 }
 async function requestPlan(planId){
- if(!confirm('سيتم إرسال اختيارك إلى مركز الاشتراكات وتفعيله تلقائياً. عند أول تفعيل تبدأ تجربة مجانية لمدة شهرين. هل تريد المتابعة؟'))return;
+ if(!confirm('سيتم حفظ اختيار الخطة في مركز الاشتراكات. لا يتم تفعيل الاشتراك المدفوع إلا بعد تحويل المبلغ وتأكيده من الإدارة. هل تريد المتابعة؟'))return;
  try{
-  const result=await api('subscription/choose','POST',{plan_id:planId});
-  alert(result.trial_started?'تم تفعيل الفترة التجريبية لمدة شهرين، وتم تسجيل خطتك لتبدأ بعدها تلقائياً.':'تم تسجيل اختيار الخطة تلقائياً.');
+  await api('subscription/choose','POST',{plan_id:planId});
+  alert('تم حفظ اختيار الخطة.');
   await loadMySubscription();
  }catch(e){alert(e.message)}
 }
