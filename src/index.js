@@ -10,7 +10,7 @@ async function subscriptionStatus(env){
   const response=await fetch("https://subscription-center.tootosael.workers.dev/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
   if(!response.ok) return {active:false,unavailable:response.status>=500};
   const result=await response.json();
-  return {active:result.active===true,unavailable:false};
+  return {active:result.active===true,unavailable:false,status:result.status||"inactive",starts_at:result.starts_at||null,ends_at:result.ends_at||null,plan_name:result.plan_name||null,duration_months:result.duration_months??null,price_sar:result.price_sar??null};
  } catch { return {active:false,unavailable:true}; }
 }
 function subscriptionPage(unavailable=false){
@@ -64,6 +64,10 @@ export default {
       return withCors(json({ok:true}));
      }
      if(!authorized(req,env)) return withCors(json({error:"يلزم تسجيل الدخول إلى لوحة التحكم"},401));
+     if(path==="/api/admin/subscription" && method==="GET"){
+      const status=await subscriptionStatus(env);
+      return withCors(json(status));
+     }
      if(path==="/api/admin/overview" && method==="GET"){
       const [orders,meals,plans]=await Promise.all([env.DB.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 100").all(),env.DB.prepare("SELECT * FROM meals ORDER BY id DESC").all(),env.DB.prepare("SELECT * FROM plans ORDER BY id DESC").all()]);
       return withCors(json({orders:orders.results,meals:meals.results,plans:plans.results}));
