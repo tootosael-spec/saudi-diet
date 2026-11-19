@@ -12,7 +12,7 @@ async function subscriptionStatus(env){
   const response=await fetch(centerUrl+"/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
   const result=await response.json().catch(()=>({}));
   if(!response.ok) return {active:false,unavailable:response.status>=500,reason:result.reason||result.error||(response.status===404?"invalid_project":"verification_failed"),diagnostics};
-  return {active:result.active===true,unavailable:false,reason:result.reason||null,status:result.status||"inactive",starts_at:result.starts_at||null,ends_at:result.ends_at||null,plan_name:result.plan_name||null,duration_months:result.duration_months??null,price_sar:result.price_sar??null,payment_details:result.payment_details||null,diagnostics};
+  return {active:result.active===true,unavailable:false,reason:result.reason||null,status:result.status||"inactive",starts_at:result.starts_at||null,ends_at:result.ends_at||null,plan_name:result.plan_name||null,duration_months:result.duration_months??null,price_sar:result.price_sar??null,trial_used:result.trial_used===true,trial_active:result.trial_active===true,next_plan_name:result.next_plan_name||null,next_starts_at:result.next_starts_at||null,next_ends_at:result.next_ends_at||null,plans:Array.isArray(result.plans)?result.plans:[],payment_details:result.payment_details||null,diagnostics};
  } catch { return {active:false,unavailable:true,reason:"center_unreachable",diagnostics}; }
 }
 function subscriptionPage(unavailable=false){
@@ -66,6 +66,15 @@ export default {
       return withCors(json({ok:true}));
      }
      if(!authorized(req,env)) return withCors(json({error:"يلزم تسجيل الدخول إلى لوحة التحكم"},401));
+     if(path==="/api/admin/subscription/choose" && method==="POST"){
+      const b=await body(req);
+      if(!b.plan_id || !Number.isInteger(Number(b.plan_id))) return withCors(json({error:"اختر خطة صحيحة"},400));
+      if(!env.SUBSCRIPTION_PROJECT_KEY || !env.SUBSCRIPTION_VERIFICATION_TOKEN) return withCors(json({error:"بيانات ربط الاشتراك غير مكتملة"},503));
+      const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\/+$/, "");
+      const response=await fetch(centerUrl+"/api/request-plan",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN,plan_id:Number(b.plan_id)})});
+      const result=await response.json().catch(()=>({error:"invalid_center_response"}));
+      return withCors(json(result,response.status));
+     }
      if(path==="/api/admin/subscription" && method==="GET"){
       const status=await subscriptionStatus(env);
       return withCors(json(status));
