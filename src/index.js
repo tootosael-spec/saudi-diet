@@ -1,19 +1,21 @@
+import { activateProject, getSubscriptionStatus, selectSubscriptionPlan, submitSubscriptionPayment } from "./subscriptionClient.js";
 const json = (data, status=200) => new Response(JSON.stringify(data), { status, headers: { "content-type":"application/json; charset=utf-8", "cache-control":"no-store" } });
 const cors = { "access-control-allow-origin":"*", "access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS", "access-control-allow-headers":"content-type,authorization" };
 function withCors(r){ const h=new Headers(r.headers); for(const [k,v] of Object.entries(cors)) h.set(k,v); return new Response(r.body,{status:r.status,headers:h}); }
 async function body(req){ try{return await req.json()}catch{return {}} }
 async function setting(db,key,fallback=""){ const row=await db.prepare("SELECT value FROM settings WHERE key=?").bind(key).first(); return row?.value ?? fallback; }
 function authorized(req,env){ const auth=req.headers.get("authorization")||""; return !!env.ADMIN_PASSWORD && auth === "Bearer "+env.ADMIN_PASSWORD; }
-async function subscriptionStatus(env){
- const diagnostics={project_key_configured:!!env.SUBSCRIPTION_PROJECT_KEY,verification_token_configured:!!env.SUBSCRIPTION_VERIFICATION_TOKEN};
- if(!diagnostics.project_key_configured || !diagnostics.verification_token_configured) return {active:false,unavailable:true,reason:"credentials_missing",diagnostics};
- try {
-  const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\/+$/, "");
-  const response=await fetch(centerUrl+"/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
-  const result=await response.json().catch(()=>({}));
-  if(!response.ok) return {active:false,unavailable:response.status>=500,reason:result.reason||result.error||(response.status===404?"invalid_project":"verification_failed"),diagnostics};
-  return {active:result.active===true,unavailable:false,reason:result.reason||null,status:result.status||"inactive",starts_at:result.starts_at||null,ends_at:result.ends_at||null,plan_name:result.plan_name||null,duration_months:result.duration_months??null,price_sar:result.price_sar??null,trial_used:result.trial_used===true,trial_active:result.trial_active===true,next_plan_name:result.next_plan_name||null,next_starts_at:result.next_starts_at||null,next_ends_at:result.next_ends_at||null,plans:Array.isArray(result.plans)?result.plans:[],payment_details:result.payment_details||null,diagnostics};
- } catch { return {active:false,unavailable:true,reason:"center_unreachable",diagnostics}; }
+async function subscriptionStatus(env,{activate=false}={}){
+ const diagnostics={project_key_configured:!!env.SUBSCRIPTION_PROJECT_KEY,secret_configured:!!env.SUBSCRIPTION_SECRET,center_url_configured:!!env.SUBSCRIPTION_CENTER_URL};
+ if(!diagnostics.project_key_configured||!diagnostics.secret_configured||!diagnostics.center_url_configured) return {active:false,can_order:false,unavailable:true,reason:"credentials_missing",diagnostics};
+ try{
+  if(activate) await activateProject(env);
+  const result=await getSubscriptionStatus(env);
+  return {...result,active:result?.can_order===true,unavailable:false,diagnostics};
+ }catch(e){
+  const code=String(e.message||"");
+  return {active:false,can_order:false,unavailable:true,reason:code==="subscription_credentials_missing"?"credentials_missing":"center_unreachable",diagnostics};
+ }
 }
 function subscriptionPage(unavailable=false){
  const title=unavailable?"تعذر التحقق من الاشتراك":"المتجر متوقف مؤقتاً";
@@ -68,12 +70,24 @@ export default {
      if(!authorized(req,env)) return withCors(json({error:"يلزم تسجيل الدخول إلى لوحة التحكم"},401));
      if(path==="/api/admin/subscription/choose" && method==="POST"){
       const b=await body(req);
-      if(!b.plan_id || !Number.isInteger(Number(b.plan_id))) return withCors(json({error:"اختر خطة صحيحة"},400));
-      if(!env.SUBSCRIPTION_PROJECT_KEY || !env.SUBSCRIPTION_VERIFICATION_TOKEN) return withCors(json({error:"بيانات ربط الاشتراك غير مكتملة"},503));
-      const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\/+$/, "");
-      const response=await fetch(centerUrl+"/api/request-plan",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN,plan_id:Number(b.plan_id)})});
-      const result=await response.json().catch(()=>({error:"invalid_center_response"}));
-      return withCors(json(result,response.status));
+      const id=Number(b.plan_id);
+      if(!Number.isInteger(id)||id<1) return withCors(json({error:"اختر خطة صحيحة"},400));
+      try{
+       const current=await getSubscriptionStatus(env);
+       const plan=(current.plans||[]).find(x=>Number(x.id)===id);
+       if(!plan) return withCors(json({error:"الخطة غير موجودة في مركز الاشتراكات"},404));
+       const code=Number(plan.duration_months)===12?"yearly":"monthly";
+       const result=await selectSubscriptionPlan(env,code);
+       return withCors(json(result));
+      }catch(e){return withCors(json({error:"تعذر تسجيل الخطة في مركز الاشتراكات"},503))}
+     }
+     if(path==="/api/admin/subscription/payment" && method==="POST"){
+      const b=await body(req);
+      if(!String(b.bank_reference||"").trim()) return withCors(json({error:"أدخل رقم الحوالة أو مرجع التحويل"},400));
+      try{
+       const result=await submitSubscriptionPayment(env,String(b.bank_reference).trim(),String(b.notes||""));
+       return withCors(json(result));
+      }catch(e){return withCors(json({error:e.message==="trial_still_active"?"التجربة المجانية ما زالت سارية":e.message==="payment_already_pending"?"لديك طلب تحويل قيد المراجعة":"تعذر إرسال طلب الدفع إلى المركز"},409))}
      }
      if(path==="/api/admin/subscription" && method==="GET"){
       const status=await subscriptionStatus(env);
