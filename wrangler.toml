@@ -12,3 +12,6 @@ binding = "DB"
 database_name = "saudi-diet"
 database_id = "0e39c0b5-24b0-4c7e-ba18-bdce95067367"
 migrations_dir = "migrations"
+
+[vars]
+SUBSCRIPTION_CENTER_URL = "https://subscription-center.tootosael.workers.dev"
