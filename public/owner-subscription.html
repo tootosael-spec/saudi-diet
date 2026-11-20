@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>إدارة اشتراك سعودي دايت</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#080e0a;color:#f4f8f4;font-family:system-ui,sans-serif;padding:18px}.wrap{max-width:680px;margin:24px auto}.box{background:#101b14;border:1px solid #344638;border-radius:18px;padding:20px;margin:14px 0}h1{font-size:24px}p{color:#b6c4b9}input,button{font:inherit;width:100%;padding:14px;border-radius:11px;margin:7px 0}input{background:#080f0b;color:white;border:1px solid #405442}button{border:0;background:#b5f34a;color:#10170c;font-weight:800}button.alt{background:#233329;color:#fff;border:1px solid #435347}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.entry{display:flex;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid #354239}.hidden{display:none}@media(max-width:480px){.row{grid-template-columns:1fr}}
+</style></head>
+<body><main class="wrap"><h1>إدارة اشتراك سعودي دايت</h1><p>صفحة خاصة بمالك المنصة فقط. لا تشارك مفتاح الإدارة مع صاحب المتجر.</p>
+<section class="box" id="login"><label>مفتاح مالك المنصة</label><input id="key" type="password" autocomplete="off" placeholder="أدخل PLATFORM_OWNER_KEY"><button onclick="connect()">دخول</button><p id="error"></p></section>
+<section class="box hidden" id="panel"><h2>حالة الاشتراك</h2><div id="result">جارٍ التحميل...</div><div class="row"><button onclick="act('monthly')">تفعيل / تمديد شهر</button><button onclick="act('yearly')">تفعيل / تمديد سنة</button></div><button class="alt" onclick="act('suspend')">إيقاف الاشتراك</button><button class="alt" onclick="load()">تحديث الحالة</button><button class="alt" onclick="logout()">تسجيل الخروج</button></section>
+</main><script>
+const $=id=>document.getElementById(id);let key=sessionStorage.getItem('sd_platform_owner_key')||'';
+async function api(path,method='GET',body){const r=await fetch('/api/admin/'+path,{method,headers:{'content-type':'application/json','authorization':'Bearer '+key},body:body?JSON.stringify(body):undefined});const d=await r.json();if(!r.ok)throw Error(d.error||'تعذر تنفيذ الطلب');return d}
+function date(v){if(!v)return '—';const d=new Date(String(v).replace(' ','T')+'Z');return isNaN(d)?v:d.toLocaleString('ar-SA',{dateStyle:'medium',timeStyle:'short'})}
+async function connect(){key=$('key').value.trim();if(!key){$('error').textContent='أدخل المفتاح';return}try{await load();sessionStorage.setItem('sd_platform_owner_key',key);$('login').classList.add('hidden');$('panel').classList.remove('hidden')}catch(e){$('error').textContent=e.message}}
+async function load(){const s=await api('subscription-check');const labels={trial:'تجريبي مجاني',active:'نشط',suspended:'موقوف',expired:'منتهي'};const rows=[['الحالة',labels[s.display_status||s.status]||s.status],['الباقة',s.plan],['الأيام المتبقية',s.days_left],['نهاية التجربة',date(s.trial_ends_at)],['تاريخ انتهاء الاشتراك',date(s.ends_at)],['التجربة المجانية مستخدمة',s.trial_used?'نعم':'لا']];$('result').innerHTML=rows.map(x=>'<div class="entry"><strong>'+x[0]+'</strong><span>'+String(x[1]??'—')+'</span></div>').join('')}
+async function act(action){const names={monthly:'تمديد شهر',yearly:'تمديد سنة',suspend:'إيقاف الاشتراك'};if(!confirm('تأكيد '+names[action]+'؟'))return;try{await api('subscription-action','POST',{action});await load();alert('تم تحديث الاشتراك')}catch(e){alert(e.message)}}
+function logout(){sessionStorage.removeItem('sd_platform_owner_key');key='';$('panel').classList.add('hidden');$('login').classList.remove('hidden');$('key').value=''}
+if(key){$('key').value=key;connect()}
+</script></body></html>
