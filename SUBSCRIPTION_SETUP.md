@@ -9,7 +9,7 @@
 3. انسخ `project_key` و`verification_secret` فور ظهورهما. السر لا يُعرض مرة أخرى إلا عند تدوير بيانات الربط.
 4. في إعدادات Worker الخاص بسعودي دايت، أضف السرّين:
    - `SUBSCRIPTION_PROJECT_KEY` = قيمة `project_key`
-   - `SUBSCRIPTION_SECRET` = قيمة `verification_secret`
+   - `SUBSCRIPTION_VERIFICATION_SECRET` = قيمة `verification_secret`
 5. متغير الرابط مضبوط في `wrangler.toml`:
    - `SUBSCRIPTION_CENTER_URL` = `https://subscription-center.tootosael.workers.dev`
 
@@ -23,4 +23,4 @@
 
 ## تنبيه نشر
 
-لا تدمج هذا الفرع إلى `main` قبل إضافة `SUBSCRIPTION_PROJECT_KEY` و`SUBSCRIPTION_SECRET` إلى أسرار Cloudflare Worker. التحقق مغلق افتراضيًا عند غياب الأسرار، وبالتالي ستُرفض الطلبات الجديدة حتى اكتمال الربط.
+لا تدمج هذا الفرع إلى `main` قبل إضافة `SUBSCRIPTION_PROJECT_KEY` و`SUBSCRIPTION_VERIFICATION_SECRET` إلى أسرار Cloudflare Worker. التحقق مغلق افتراضيًا عند غياب الأسرار، وبالتالي ستُرفض الطلبات الجديدة حتى اكتمال الربط.
