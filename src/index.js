@@ -143,9 +143,9 @@ export default {
      if(path==="/api/admin/overview" && method==="GET"){
       // Saudi Arabia local day window: keep today and yesterday only.
       const cutoff="datetime('now','+3 hours','start of day','-27 hours')";
-      await env.DB.prepare("DELETE FROM orders WHERE created_at < "+cutoff).run();
+      await env.DB.prepare("DELETE FROM orders WHERE order_type!='subscription' AND created_at < "+cutoff).run();
       const [orders,meals,plans]=await Promise.all([
-       env.DB.prepare("SELECT * FROM orders WHERE created_at >= "+cutoff+" ORDER BY id DESC").all(),
+       env.DB.prepare("SELECT * FROM orders WHERE order_type='subscription' OR created_at >= "+cutoff+" ORDER BY id DESC").all(),
        env.DB.prepare("SELECT * FROM meals ORDER BY id DESC").all(),
        env.DB.prepare("SELECT * FROM plans ORDER BY id DESC").all()
       ]);
