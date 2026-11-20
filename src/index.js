@@ -141,7 +141,14 @@ export default {
       }));
      }
      if(path==="/api/admin/overview" && method==="GET"){
-      const [orders,meals,plans]=await Promise.all([env.DB.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 100").all(),env.DB.prepare("SELECT * FROM meals ORDER BY id DESC").all(),env.DB.prepare("SELECT * FROM plans ORDER BY id DESC").all()]);
+      // Saudi Arabia local day window: keep today and yesterday only.
+      const cutoff="datetime('now','+3 hours','start of day','-27 hours')";
+      await env.DB.prepare("DELETE FROM orders WHERE created_at < "+cutoff).run();
+      const [orders,meals,plans]=await Promise.all([
+       env.DB.prepare("SELECT * FROM orders WHERE created_at >= "+cutoff+" ORDER BY id DESC").all(),
+       env.DB.prepare("SELECT * FROM meals ORDER BY id DESC").all(),
+       env.DB.prepare("SELECT * FROM plans ORDER BY id DESC").all()
+      ]);
       return withCors(json({orders:orders.results,meals:meals.results,plans:plans.results}));
      }
      if(path==="/api/admin/meal" && method==="POST"){
@@ -181,6 +188,10 @@ export default {
   return env.ASSETS.fetch(req);
  },
  async scheduled(event,env,ctx){
-  ctx.waitUntil(runSubscriptionAlerts(env));
+  ctx.waitUntil(Promise.all([
+   runSubscriptionAlerts(env),
+   // Delete orders older than yesterday, using Saudi Arabia local time (UTC+3).
+   env.DB.prepare("DELETE FROM orders WHERE created_at < datetime('now','+3 hours','start of day','-27 hours')").run()
+  ]));
  }
 };
