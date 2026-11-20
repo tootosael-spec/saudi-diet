@@ -125,6 +125,21 @@ export default {
       return withCors(json({ok:true,uploaded_at:row?.receipt_uploaded_at}));
      }
 
+     if(path==="/api/admin/subscription-status" && method==="GET"){
+      if(!authorized(req,env)) return withCors(json({error:"يلزم تسجيل الدخول إلى لوحة التحكم"},401));
+      const s=await getLocalSubscription(env);
+      return withCors(json({
+       status:s.display_status,
+       plan:s.plan,
+       trial_used:!!s.trial_used,
+       trial_started_at:s.trial_started_at,
+       trial_ends_at:s.trial_ends_at,
+       starts_at:s.starts_at,
+       ends_at:s.ends_at,
+       days_left:s.days_left,
+       active:s.active
+      }));
+     }
      if(path==="/api/admin/overview" && method==="GET"){
       const [orders,meals,plans]=await Promise.all([env.DB.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 100").all(),env.DB.prepare("SELECT * FROM meals ORDER BY id DESC").all(),env.DB.prepare("SELECT * FROM plans ORDER BY id DESC").all()]);
       return withCors(json({orders:orders.results,meals:meals.results,plans:plans.results}));
