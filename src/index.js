@@ -85,21 +85,19 @@ export default {
       if(String(b.password||"")!==env.ADMIN_PASSWORD) return withCors(json({error:"كلمة المرور غير صحيحة"},401));
       return withCors(json({ok:true}));
      }
-     if(!authorized(req,env)) return withCors(json({error:"يلزم تسجيل الدخول إلى لوحة التحكم"},401));
      if(path==="/api/admin/subscription-check" && method==="GET"){
+      if(!env.PLATFORM_OWNER_KEY || (req.headers.get("authorization")||"") !== "Bearer "+env.PLATFORM_OWNER_KEY) return withCors(json({error:"غير مصرح"},401));
       return withCors(json(await getLocalSubscription(env)));
      }
      if(path==="/api/admin/subscription-action" && method==="POST"){
+      if(!env.PLATFORM_OWNER_KEY || (req.headers.get("authorization")||"") !== "Bearer "+env.PLATFORM_OWNER_KEY) return withCors(json({error:"غير مصرح"},401));
       const b=await body(req),action=String(b.action||"");
       if(!["monthly","yearly","suspend"].includes(action)) return withCors(json({error:"الإجراء غير معروف"},400));
-      if(action==="suspend"){
-       await env.DB.prepare("UPDATE subscriptions SET status='suspended',updated_at=CURRENT_TIMESTAMP WHERE id=1").run();
-      }else{
-       const interval=action==="monthly"?"+1 month":"+1 year";
-       await env.DB.prepare("UPDATE subscriptions SET status='active',plan=?,starts_at=COALESCE(starts_at,CURRENT_TIMESTAMP),ends_at=datetime(CASE WHEN ends_at>CURRENT_TIMESTAMP THEN ends_at ELSE CURRENT_TIMESTAMP END,?),updated_at=CURRENT_TIMESTAMP WHERE id=1").bind(action,interval).run();
-      }
+      if(action==="suspend") await env.DB.prepare("UPDATE subscriptions SET status='suspended',updated_at=CURRENT_TIMESTAMP WHERE id=1").run();
+      else { const interval=action==="monthly"?"+1 month":"+1 year"; await env.DB.prepare("UPDATE subscriptions SET status='active',plan=?,starts_at=COALESCE(starts_at,CURRENT_TIMESTAMP),ends_at=datetime(CASE WHEN ends_at>CURRENT_TIMESTAMP THEN ends_at ELSE CURRENT_TIMESTAMP END,?),updated_at=CURRENT_TIMESTAMP WHERE id=1").bind(action,interval).run(); }
       return withCors(json({ok:true,subscription:await getLocalSubscription(env)}));
      }
+     if(!authorized(req,env)) return withCors(json({error:"يلزم تسجيل الدخول إلى لوحة التحكم"},401));
      if(path==="/api/admin/overview" && method==="GET"){
       const [orders,meals,plans]=await Promise.all([env.DB.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 100").all(),env.DB.prepare("SELECT * FROM meals ORDER BY id DESC").all(),env.DB.prepare("SELECT * FROM plans ORDER BY id DESC").all()]);
       return withCors(json({orders:orders.results,meals:meals.results,plans:plans.results}));
