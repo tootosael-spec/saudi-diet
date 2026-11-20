@@ -33,11 +33,37 @@ async function loadSubscriptionCheck(){
  box.textContent='جارٍ التحقق مباشرة من مركز الاشتراكات...';
  try{
   const s=await api('subscription-check');
-  const date=v=>{if(!v)return '—';const d=new Date(String(v).replace(' ','T')+'Z');return isNaN(d)?String(v):d.toLocaleString('ar-SA',{dateStyle:'medium',timeStyle:'medium'});};
-  const labels={active:'نشط',expired:'منتهي',paused:'موقوف',scheduled:'مجدول',not_started:'لم يبدأ',inactive:'غير نشط',unavailable:'تعذر التحقق'};
-  const status=s.active===true?'نشط':(labels[s.status]||s.status||'غير معروف');
-  const rows=[['الحالة',status],['تاريخ الانتهاء',date(s.ends_at)],['وقت آخر تحقق',date(s.checked_at)],['رمز HTTP',s.http_status??'—']];
-  box.innerHTML=rows.map(x=>'<div class="entry"><strong>'+x[0]+'</strong><span>'+String(x[1]).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))+'</span></div>').join('');
+  const date=v=>{if(!v)return '—';const d=new Date(String(v).replace(' ','T')+'Z');return isNaN(d)?String(v):d.toLocaleString('ar-SA',{dateStyle:'medium',timeStyle:'short'});};
+  const type=s.type||'none';
+  const status=s.active===true?'نشط':(s.status||'غير معروف');
+  const pending=s.pending_plan_request||s.pending_payment||null;
+  const plans=(s.plans||[]).filter(p=>Number(p.is_active??1)===1);
+  const monthly=plans.find(p=>Number(p.duration_months)===1&&p.name==='شهري');
+  const yearly=plans.find(p=>Number(p.duration_months)===12&&p.name==='سنوي');
+  const safe=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const rows=[['الحالة',status],['نوع الاشتراك',type],['الأيام المتبقية',Number(s.daysLeft)||0],['تاريخ البداية',date(s.starts_at)],['تاريخ الانتهاء',date(s.ends_at)]];
+  box.innerHTML=rows.map(x=>'<div class="entry"><strong>'+safe(x[0])+'</strong><span>'+safe(x[1])+'</span></div>').join('');
+  if(pending){
+   const requestLabel=pending.request_type==='plan_selection'?'طلب اختيار باقة':'طلب تحويل بنكي';
+   box.innerHTML+='<div class="entry"><strong>حالة الطلب</strong><span>قيد مراجعة المركز — '+safe(requestLabel)+'</span></div>';
+  }else{
+   box.innerHTML+='<p class="muted">اختر الباقة المناسبة. لن يتغير اشتراكك ولن تتفعل الباقة إلا بعد اعتماد الطلب من مركز الاشتراكات.</p>';
+   if(monthly)box.innerHTML+='<button type="button" data-request-plan="monthly" data-price="'+Number(monthly.price_sar)+'">شهري — '+Number(monthly.price_sar).toLocaleString('ar-SA')+' ر.س</button> ';
+   if(yearly)box.innerHTML+='<button type="button" class="alt" data-request-plan="yearly" data-price="'+Number(yearly.price_sar)+'">سنوي — '+Number(yearly.price_sar).toLocaleString('ar-SA')+' ر.س</button>';
+  }
+  box.onclick=async e=>{
+   const button=e.target.closest('[data-request-plan]');
+   if(!button)return;
+   const code=button.dataset.requestPlan,price=Number(button.dataset.price)||0;
+   const label=code==='monthly'?'الشهري':'السنوي';
+   if(!confirm('إرسال طلب باقة '+label+' بسعر '+price.toLocaleString('ar-SA')+' ر.س؟ لن تتفعل إلا بعد اعتماد المركز.'))return;
+   button.disabled=true;
+   try{
+    const result=await api('subscription-request','POST',{plan_code:code});
+    box.innerHTML='<div class="entry"><strong>تم إرسال الطلب</strong><span>طلب '+safe(result.plan_name||label)+' بمبلغ '+Number(result.amount_sar??price).toLocaleString('ar-SA')+' ر.س — بانتظار اعتماد المركز</span></div>';
+    await loadSubscriptionCheck();
+   }catch(err){alert(err.message);button.disabled=false}
+  };
  }catch(e){box.textContent='تعذر التحقق من مركز الاشتراكات: '+e.message}
 }
 async function status(id,status){await api('order-status','POST',{id,status})}

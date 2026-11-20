@@ -1,0 +1,22 @@
+name: Validate Saudi Diet
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, subscription-center-plans-ui]
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check Worker JavaScript syntax
+        run: node --check src/index.js
+      - name: Check admin dashboard JavaScript syntax
+        run: |
+          node -e "const fs=require('fs');const html=fs.readFileSync('public/admin.html','utf8');const match=html.match(/<script>([\\s\\S]*?)<\\/script>/);if(!match)throw new Error('Admin script not found');fs.writeFileSync('/tmp/admin.js',match[1]);"
+          node --check /tmp/admin.js
