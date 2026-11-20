@@ -32,7 +32,7 @@ export default {
   // Subscription management is centralized in subscription-center; no separate control Worker is used.
   if(method==="OPTIONS") return withCors(new Response(null,{status:204}));
   // Keep the owner dashboard reachable, but protect every customer-facing page and API.
-  const adminRequest=path.startsWith("/api/admin/") || path==="/saudi-diet-control" || path==="/saudi-diet-control/" || (url.hostname.startsWith("saudi-diet-control.") && path==="/");
+  const adminRequest=path==="/admin.html" || path==="/admin" || path==="/admin/" || path.startsWith("/api/admin/") || path==="/saudi-diet-control" || path==="/saudi-diet-control/" || (url.hostname.startsWith("saudi-diet-control.") && path==="/");
   if(!adminRequest){
    const subscription=await subscriptionStatus(env);
    if(!subscription.active) return subscriptionPage(subscription.unavailable);
