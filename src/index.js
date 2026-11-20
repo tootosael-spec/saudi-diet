@@ -44,15 +44,9 @@ export default {
    else if(status.reason==="center_unreachable" || status.http_status===null) reason="center_unreachable";
    else if(status.http_status!==200) reason="center_unreachable";
    return withCors(json({
-    ok:reason==="ok",
     project_name:"سعودي دايت",
     center_status:status.status||"unavailable",
-    active:status.active===true,
-    type:status.type||"none",
-    daysLeft:Number(status.daysLeft)||0,
-    reason,
-    http_status:status.http_status??null,
-    checked_at:status.checked_at
+    reason
    }));
   }
   // Keep the owner dashboard reachable, but protect every customer-facing page and API.
