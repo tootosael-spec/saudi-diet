@@ -19,7 +19,7 @@ async function subscriptionStatus(env){
    starts_at:result.starts_at||null,ends_at:result.ends_at||null,
    plan_name:result.plan_name||null,price_sar:result.price_sar??null,
    plans:Array.isArray(result.plans)?result.plans:[],
-   pending_payment:result.pending_payment||null,
+   pending_payment:result.pending_payment||null,pending_plan_request:result.pending_plan_request||null,
    checked_at:checkedAt,http_status:response.status,reason:result.reason||null
   };
  }catch(e){return {active:false,unavailable:true,status:"unavailable",reason:"center_unreachable",checked_at:checkedAt,http_status:null};}
@@ -85,7 +85,7 @@ export default {
        const check=await fetch(centerUrl+"/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
        const snapshot=await check.json().catch(()=>null);
        if(!check.ok||!snapshot||snapshot.ok===false) return withCors(json({error:"تعذر قراءة الخطط من مركز الاشتراكات"},503));
-       if(snapshot.pending_payment) return withCors(json({error:"لديك طلب اشتراك قيد المراجعة بالفعل"},409));
+       if(snapshot.pending_payment||snapshot.pending_plan_request) return withCors(json({error:"لديك طلب اشتراك قيد المراجعة بالفعل"},409));
        const plan=(snapshot.plans||[]).find(x=>planCode==="monthly"?(Number(x.duration_months)===1&&x.name==="شهري"):(Number(x.duration_months)===12&&x.name==="سنوي"));
        if(!plan) return withCors(json({error:"الباقة المطلوبة غير متاحة حالياً"},409));
        const response=await fetch(centerUrl+"/api/request-plan",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN,plan_id:plan.id})});
