@@ -9,7 +9,7 @@ async function getLocalSubscription(env){
  const row=await env.DB.prepare("SELECT * FROM subscriptions WHERE id=1").first();
  const end=row?.ends_at?new Date(String(row.ends_at).replace(' ','T')+'Z').getTime():0;
  const active=!!row && ['trial','active'].includes(row.status) && end>Date.now();
- return {...row,active,days_left:active?Math.ceil((end-Date.now())/86400000):0};
+ return {...row,active,display_status:active?row.status:(row.status==='suspended'?'suspended':'expired'),days_left:active?Math.ceil((end-Date.now())/86400000):0};
 }
 async function sendTelegram(env,message){
  if(!env.TELEGRAM_BOT_TOKEN||!env.TELEGRAM_CHAT_ID) return false;
