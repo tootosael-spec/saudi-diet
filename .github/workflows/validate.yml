@@ -15,7 +15,9 @@ jobs:
         with:
           node-version: 22
       - name: Check Worker JavaScript syntax
-        run: node --check src/index.js
+        run: |
+          node --check src/index.js
+          node --check src/subscriptionClient.js
       - name: Check admin dashboard JavaScript syntax
         run: |
           node -e "const fs=require('fs');const html=fs.readFileSync('public/admin.html','utf8');const match=html.match(/<script>([\\s\\S]*?)<\\/script>/);if(!match)throw new Error('Admin script not found');fs.writeFileSync('/tmp/admin.js',match[1]);"
