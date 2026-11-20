@@ -34,6 +34,27 @@ export default {
   const url=new URL(req.url), path=url.pathname, method=req.method;
   // Subscription management is centralized in subscription-center; no separate control Worker is used.
   if(method==="OPTIONS") return withCors(new Response(null,{status:204}));
+  // Public, read-only diagnostics endpoint. It never grants access to store APIs.
+  // It must remain reachable even when the storefront subscription gate is active.
+  if(path==="/api/check" && method==="GET"){
+   const status=await subscriptionStatus(env);
+   let reason="ok";
+   if(status.reason==="credentials_missing") reason="credentials_missing";
+   else if(status.reason==="invalid_project") reason="invalid_project";
+   else if(status.reason==="center_unreachable" || status.http_status===null) reason="center_unreachable";
+   else if(status.http_status!==200) reason="center_unreachable";
+   return withCors(json({
+    ok:reason==="ok",
+    project_name:"سعودي دايت",
+    center_status:status.status||"unavailable",
+    active:status.active===true,
+    type:status.type||"none",
+    daysLeft:Number(status.daysLeft)||0,
+    reason,
+    http_status:status.http_status??null,
+    checked_at:status.checked_at
+   }));
+  }
   // Keep the owner dashboard reachable, but protect every customer-facing page and API.
   const adminRequest=path==="/admin.html" || path==="/admin" || path==="/admin/" || path.startsWith("/api/admin/") || path==="/saudi-diet-control" || path==="/saudi-diet-control/" || (url.hostname.startsWith("saudi-diet-control.") && path==="/");
   if(!adminRequest){
