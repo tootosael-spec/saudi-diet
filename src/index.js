@@ -191,7 +191,7 @@ export default {
   ctx.waitUntil(Promise.all([
    runSubscriptionAlerts(env),
    // Delete orders older than yesterday, using Saudi Arabia local time (UTC+3).
-   env.DB.prepare("DELETE FROM orders WHERE created_at < datetime('now','+3 hours','start of day','-27 hours')").run()
+   env.DB.prepare("DELETE FROM orders WHERE order_type!='subscription' AND created_at < datetime('now','+3 hours','start of day','-27 hours')").run()
   ]));
  }
 };
