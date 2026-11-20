@@ -48,7 +48,7 @@ export default {
    const status=await getLocalSubscription(env);
    return withCors(json({project_name:"سعودي دايت",subscription_status:status.status,active:status.active,days_left:status.days_left,reason:status.active?"ok":"subscription_inactive"}));
   }
-  // Keep the storefront catalogue visible; validate centrally only when an order is submitted.
+  // Keep the storefront catalogue visible; validate the local subscription only when an order is submitted.
   const protectedOrder=path==="/api/orders" && method==="POST";
   if(protectedOrder){
    const subscription=await getLocalSubscription(env);
