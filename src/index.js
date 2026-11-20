@@ -80,7 +80,7 @@ export default {
       const b=await body(req),planCode=String(b.plan_code||"");
       if(!["monthly","yearly"].includes(planCode)) return withCors(json({error:"اختر باقة شهرية أو سنوية"},400));
       if(!env.SUBSCRIPTION_PROJECT_KEY||!env.SUBSCRIPTION_VERIFICATION_TOKEN) return withCors(json({error:"بيانات الربط مع مركز الاشتراكات غير مضبوطة"},503));
-      const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\\/+$/, "");
+      const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\/+$/, "");
       try{
        const check=await fetch(centerUrl+"/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
        const snapshot=await check.json().catch(()=>null);
