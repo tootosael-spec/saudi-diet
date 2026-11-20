@@ -39,6 +39,34 @@ async function savePlan(){await api('plan','POST',{id:Number($('pId').value)||un
 function editPlan(id){let p=data.plans.find(x=>x.id===id);$('pId').value=p.id;$('pName').value=p.name;$('pDuration').value=p.duration;$('pPrice').value=p.price;$('pMeals').value=p.meals_per_day;$('pDesc').value=p.description;tab('plans',document.querySelectorAll('.tab')[2])}
 async function saveSettings(){await api('settings','POST',{store_name:$('sName').value,tagline:$('sTag').value,whatsapp:$('sWa').value,delivery_fee:$('sFee').value,free_delivery_minimum:$('sFree').value,hero_title:$('sHero').value,hero_subtitle:$('sSub').value});alert('تم حفظ الإعدادات')}
 async function loadPaymentInfo(){try{const p=await api('payment-settings');$('payBank').textContent=p.bank_name||'لم تحدد بيانات البنك بعد';$('payIban').textContent=p.iban||'—'}catch(e){$('receiptMessage').textContent=e.message}}
-async function uploadReceipt(input){const file=input.files&&input.files[0];if(!file)return;if(!['image/jpeg','image/png'].includes(file.type)){alert('اختر صورة JPG أو PNG');input.value='';return}const reader=new FileReader();reader.onload=()=>{const img=new Image();img.onload=()=>{const scale=Math.min(1,1300/Math.max(img.width,img.height));const canvas=document.createElement('canvas');canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);let quality=.76;const compress=()=>canvas.toBlob(async blob=>{if(!blob){alert('تعذر تجهيز الصورة');return}if(blob.size>450*1024&&quality>.4){quality-=.08;compress();return}if(blob.size>600*1024){alert('حجم الإيصال كبير، اختر صورة أصغر');return}const fr=new FileReader();fr.onload=async()=>{try{await api('payment-receipt','POST',{data:fr.result,mime:'image/jpeg'});$('receiptMessage').textContent='تم رفع الإيصال بنجاح';alert('تم إرسال الإيصال إلى إدارة المنصة')}catch(e){alert(e.message)}};fr.readAsDataURL(blob)},'image/jpeg',quality)};compress()};img.onerror=()=>alert('تعذر قراءة الصورة');img.src=reader.result};reader.readAsDataURL(file)}
+async function uploadReceipt(input){
+ const file=input.files&&input.files[0];if(!file)return;
+ if(!['image/jpeg','image/png'].includes(file.type)){alert('اختر صورة JPG أو PNG');input.value='';return}
+ const reader=new FileReader();
+ reader.onload=()=>{
+  const img=new Image();
+  img.onload=()=>{
+   const scale=Math.min(1,1300/Math.max(img.width,img.height));
+   const canvas=document.createElement('canvas');
+   canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);
+   canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+   let quality=.76;
+   const compress=()=>{
+    canvas.toBlob(async (blob)=>{
+     if(!blob){alert('تعذر تجهيز الصورة');return}
+     if(blob.size>450*1024&&quality>.4){quality-=.08;compress();return}
+     if(blob.size>600*1024){alert('حجم الإيصال كبير، اختر صورة أصغر');return}
+     const fr=new FileReader();
+     fr.onload=async()=>{try{await api('payment-receipt','POST',{data:fr.result,mime:'image/jpeg'});$('receiptMessage').textContent='تم رفع الإيصال بنجاح';alert('تم إرسال الإيصال إلى إدارة المنصة')}catch(e){alert(e.message)}};
+     fr.readAsDataURL(blob);
+    },'image/jpeg',quality);
+   };
+   compress();
+  };
+  img.onerror=()=>alert('تعذر قراءة الصورة');
+  img.src=reader.result;
+ };
+ reader.readAsDataURL(file);
+}
 if(sessionStorage.getItem('sd_admin_key')){$('loginBox').classList.add('hidden');$('app').classList.remove('hidden');refresh().catch(e=>alert(e.message))}
 </script></body></html>
