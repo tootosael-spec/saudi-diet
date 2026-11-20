@@ -36,7 +36,7 @@ async function loadSubscriptionCheck(){
   const date=v=>{if(!v)return '—';const d=new Date(String(v).replace(' ','T')+'Z');return isNaN(d)?String(v):d.toLocaleString('ar-SA',{dateStyle:'medium',timeStyle:'short'});};
   const type=s.type||'none';
   const status=s.active===true?'نشط':(s.status||'غير معروف');
-  const pending=s.pending_payment||null;
+  const pending=s.pending_plan_request||s.pending_payment||null;
   const plans=(s.plans||[]).filter(p=>Number(p.is_active??1)===1);
   const monthly=plans.find(p=>Number(p.duration_months)===1&&p.name==='شهري');
   const yearly=plans.find(p=>Number(p.duration_months)===12&&p.name==='سنوي');
