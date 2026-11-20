@@ -7,14 +7,14 @@ function authorized(req,env){ const auth=req.headers.get("authorization")||""; r
 async function subscriptionStatus(env){
  const checkedAt=new Date().toISOString();
  const diagnostics={project_key_configured:!!env.SUBSCRIPTION_PROJECT_KEY,verification_token_configured:!!env.SUBSCRIPTION_VERIFICATION_TOKEN};
- if(!diagnostics.project_key_configured||!diagnostics.verification_token_configured) return {active:false,status:"unavailable",reason:"credentials_missing",checked_at:checkedAt,http_status:null};
+ if(!diagnostics.project_key_configured||!diagnostics.verification_token_configured) return {active:false,unavailable:false,status:"unavailable",reason:"credentials_missing",checked_at:checkedAt,http_status:null};
  const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\/+$/, "");
  try{
   const response=await fetch(centerUrl+"/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
   const result=await response.json().catch(()=>({error:"invalid_center_response"}));
-  if(!response.ok||result.ok===false) return {active:false,status:result.status||"unavailable",type:result.type||"none",daysLeft:Number(result.daysLeft)||0,reason:result.reason||result.error||"verification_failed",ends_at:result.ends_at||null,checked_at:checkedAt,http_status:response.status};
+  if(!response.ok||result.ok===false) return {active:false,unavailable:response.status>=500||response.status===429,status:result.status||"unavailable",type:result.type||"none",daysLeft:Number(result.daysLeft)||0,reason:result.reason||result.error||"verification_failed",ends_at:result.ends_at||null,checked_at:checkedAt,http_status:response.status};
   return {
-   active:result.active===true,status:result.status||(result.active===true?"active":"inactive"),
+   active:result.active===true,unavailable:false,status:result.status||(result.active===true?"active":"inactive"),
    type:result.type||"none",daysLeft:Number(result.daysLeft)||0,
    starts_at:result.starts_at||null,ends_at:result.ends_at||null,
    plan_name:result.plan_name||null,price_sar:result.price_sar??null,
@@ -22,7 +22,7 @@ async function subscriptionStatus(env){
    pending_payment:result.pending_payment||null,
    checked_at:checkedAt,http_status:response.status,reason:result.reason||null
   };
- }catch(e){return {active:false,status:"unavailable",reason:"center_unreachable",checked_at:checkedAt,http_status:null};}
+ }catch(e){return {active:false,unavailable:true,status:"unavailable",reason:"center_unreachable",checked_at:checkedAt,http_status:null};}
 }
 function subscriptionPage(unavailable=false){
  const title=unavailable?"تعذر التحقق من الاشتراك":"المتجر متوقف مؤقتاً";
@@ -38,7 +38,7 @@ export default {
   const adminRequest=path==="/admin.html" || path==="/admin" || path==="/admin/" || path.startsWith("/api/admin/") || path==="/saudi-diet-control" || path==="/saudi-diet-control/" || (url.hostname.startsWith("saudi-diet-control.") && path==="/");
   if(!adminRequest){
    const subscription=await subscriptionStatus(env);
-   if(!subscription.active) return subscriptionPage(subscription.unavailable);
+   if(!subscription.active && !subscription.unavailable) return subscriptionPage(false);
   }
   if(path.startsWith("/api/")){
    try {
