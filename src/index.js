@@ -12,8 +12,8 @@ async function subscriptionStatus(env){
  try{
   const response=await fetch(centerUrl+"/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
   const result=await response.json().catch(()=>({error:"invalid_center_response"}));
-  if(!response.ok||result.ok===false) return {active:false,status:result.status||"unavailable",reason:result.reason||result.error||"verification_failed",ends_at:result.ends_at||null,checked_at:checkedAt,http_status:response.status};
-  return {active:result.active===true,status:result.status||(result.active===true?"active":"inactive"),ends_at:result.ends_at||null,checked_at:checkedAt,http_status:response.status,reason:result.reason||null};
+  if(!response.ok||result.ok===false) return {active:false,status:result.status||"unavailable",type:result.type||"none",daysLeft:Number(result.daysLeft)||0,reason:result.reason||result.error||"verification_failed",ends_at:result.ends_at||null,checked_at:checkedAt,http_status:response.status};
+  return {active:result.active===true,status:result.status||(result.active===true?"active":"inactive"),type:result.type||"none",daysLeft:Number(result.daysLeft)||0,ends_at:result.ends_at||null,checked_at:checkedAt,http_status:response.status,reason:result.reason||null};
  }catch(e){return {active:false,status:"unavailable",reason:"center_unreachable",checked_at:checkedAt,http_status:null};}
 }
 function subscriptionPage(unavailable=false){
