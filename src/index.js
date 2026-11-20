@@ -7,20 +7,14 @@ function authorized(req,env){ const auth=req.headers.get("authorization")||""; r
 async function subscriptionStatus(env){
  const checkedAt=new Date().toISOString();
  const diagnostics={project_key_configured:!!env.SUBSCRIPTION_PROJECT_KEY,verification_token_configured:!!env.SUBSCRIPTION_VERIFICATION_TOKEN};
- if(!diagnostics.project_key_configured||!diagnostics.verification_token_configured) return {active:false,unavailable:true,reason:"credentials_missing",checked_at:checkedAt,diagnostics};
+ if(!diagnostics.project_key_configured||!diagnostics.verification_token_configured) return {active:false,status:"unavailable",reason:"credentials_missing",checked_at:checkedAt,http_status:null};
  const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\\/+$/, "");
  try{
   const response=await fetch(centerUrl+"/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
   const result=await response.json().catch(()=>({error:"invalid_center_response"}));
-  if(!response.ok||result.ok===false) return {active:false,unavailable:response.status>=500,reason:result.reason||result.error||"verification_failed",checked_at:checkedAt,http_status:response.status,diagnostics};
-  const startsAt=result.starts_at||null, endsAt=result.ends_at||null;
-  const now=Date.now();
-  const startsMs=startsAt?Date.parse(String(startsAt).replace(" ","T")+"+00:00"):NaN;
-  const endsMs=endsAt?Date.parse(String(endsAt).replace(" ","T")+"+00:00"):NaN;
-  // Temporary complimentary access: allow this project until its already-recorded future subscription begins.
-  const trialActive=result.active!==true && result.status==="expired" && Number.isFinite(startsMs) && Number.isFinite(endsMs) && startsMs>now && endsMs>startsMs;
-  return {active:result.active===true||trialActive,trial_active:trialActive,unavailable:false,reason:null,status:trialActive?"trial":result.status||"not_started",starts_at:startsAt,ends_at:endsAt,plan_name:result.plan_name||null,checked_at:checkedAt,http_status:response.status,diagnostics};
- }catch(e){return {active:false,unavailable:true,reason:"center_unreachable",checked_at:checkedAt,diagnostics};}
+  if(!response.ok||result.ok===false) return {active:false,status:result.status||"unavailable",reason:result.reason||result.error||"verification_failed",ends_at:result.ends_at||null,checked_at:checkedAt,http_status:response.status};
+  return {active:result.active===true,status:result.status||(result.active===true?"active":"inactive"),ends_at:result.ends_at||null,checked_at:checkedAt,http_status:response.status,reason:result.reason||null};
+ }catch(e){return {active:false,status:"unavailable",reason:"center_unreachable",checked_at:checkedAt,http_status:null};}
 }
 function subscriptionPage(unavailable=false){
  const title=unavailable?"تعذر التحقق من الاشتراك":"المتجر متوقف مؤقتاً";
@@ -70,14 +64,7 @@ export default {
       return withCors(json({ok:true}));
      }
      if(!authorized(req,env)) return withCors(json({error:"يلزم تسجيل الدخول إلى لوحة التحكم"},401));
-     if(path==="/api/admin/subscription/choose" && method==="POST"){
-      const b=await body(req);
-      if(!b.plan_id || !Number.isInteger(Number(b.plan_id))) return withCors(json({error:"اختر خطة صحيحة"},400));
-      if(!env.SUBSCRIPTION_PROJECT_KEY || !env.SUBSCRIPTION_VERIFICATION_TOKEN || !env.SUBSCRIPTION_VERIFICATION_SECRET) return withCors(json({error:"بيانات ربط الاشتراك غير مكتملة"},503));
-      const {response,result}=await signedCenterRequest(env,"/api/v1/subscription/request-plan","POST",{plan_id:Number(b.plan_id)});
-      return withCors(json(result,response.status));
-     }
-     if((path==="/api/admin/subscription" || path==="/api/admin/subscription-check") && method==="GET"){
+     if(path==="/api/admin/subscription-check" && method==="GET"){
       const status=await subscriptionStatus(env);
       return withCors(json(status));
      }
