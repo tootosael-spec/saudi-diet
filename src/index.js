@@ -13,7 +13,15 @@ async function subscriptionStatus(env){
   const response=await fetch(centerUrl+"/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
   const result=await response.json().catch(()=>({error:"invalid_center_response"}));
   if(!response.ok||result.ok===false) return {active:false,status:result.status||"unavailable",type:result.type||"none",daysLeft:Number(result.daysLeft)||0,reason:result.reason||result.error||"verification_failed",ends_at:result.ends_at||null,checked_at:checkedAt,http_status:response.status};
-  return {active:result.active===true,status:result.status||(result.active===true?"active":"inactive"),type:result.type||"none",daysLeft:Number(result.daysLeft)||0,ends_at:result.ends_at||null,checked_at:checkedAt,http_status:response.status,reason:result.reason||null};
+  return {
+   active:result.active===true,status:result.status||(result.active===true?"active":"inactive"),
+   type:result.type||"none",daysLeft:Number(result.daysLeft)||0,
+   starts_at:result.starts_at||null,ends_at:result.ends_at||null,
+   plan_name:result.plan_name||null,price_sar:result.price_sar??null,
+   plans:Array.isArray(result.plans)?result.plans:[],
+   pending_payment:result.pending_payment||null,
+   checked_at:checkedAt,http_status:response.status,reason:result.reason||null
+  };
  }catch(e){return {active:false,status:"unavailable",reason:"center_unreachable",checked_at:checkedAt,http_status:null};}
 }
 function subscriptionPage(unavailable=false){
@@ -67,6 +75,24 @@ export default {
      if(path==="/api/admin/subscription-check" && method==="GET"){
       const status=await subscriptionStatus(env);
       return withCors(json(status));
+     }
+     if(path==="/api/admin/subscription-request" && method==="POST"){
+      const b=await body(req),planCode=String(b.plan_code||"");
+      if(!["monthly","yearly"].includes(planCode)) return withCors(json({error:"اختر باقة شهرية أو سنوية"},400));
+      if(!env.SUBSCRIPTION_PROJECT_KEY||!env.SUBSCRIPTION_VERIFICATION_TOKEN) return withCors(json({error:"بيانات الربط مع مركز الاشتراكات غير مضبوطة"},503));
+      const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\\/+$/, "");
+      try{
+       const check=await fetch(centerUrl+"/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
+       const snapshot=await check.json().catch(()=>null);
+       if(!check.ok||!snapshot||snapshot.ok===false) return withCors(json({error:"تعذر قراءة الخطط من مركز الاشتراكات"},503));
+       if(snapshot.pending_payment) return withCors(json({error:"لديك طلب اشتراك قيد المراجعة بالفعل"},409));
+       const plan=(snapshot.plans||[]).find(x=>planCode==="monthly"?(Number(x.duration_months)===1&&x.name==="شهري"):(Number(x.duration_months)===12&&x.name==="سنوي"));
+       if(!plan) return withCors(json({error:"الباقة المطلوبة غير متاحة حالياً"},409));
+       const response=await fetch(centerUrl+"/api/request-plan",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN,plan_id:plan.id})});
+       const result=await response.json().catch(()=>({error:"invalid_center_response"}));
+       if(!response.ok) return withCors(json({error:result.message||result.error||"تعذر إرسال طلب الاشتراك",details:result.error||null},response.status));
+       return withCors(json({ok:true,status:"pending",plan_name:result.plan_name||plan.name,amount_sar:result.amount_sar??plan.price_sar,request_id:result.request_id}));
+      }catch(e){return withCors(json({error:"تعذر الاتصال بمركز الاشتراكات حالياً"},503));}
      }
      if(path==="/api/admin/overview" && method==="GET"){
       const [orders,meals,plans]=await Promise.all([env.DB.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 100").all(),env.DB.prepare("SELECT * FROM meals ORDER BY id DESC").all(),env.DB.prepare("SELECT * FROM plans ORDER BY id DESC").all()]);
