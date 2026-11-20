@@ -4,31 +4,22 @@ function withCors(r){ const h=new Headers(r.headers); for(const [k,v] of Object.
 async function body(req){ try{return await req.json()}catch{return {}} }
 async function setting(db,key,fallback=""){ const row=await db.prepare("SELECT value FROM settings WHERE key=?").bind(key).first(); return row?.value ?? fallback; }
 function authorized(req,env){ const auth=req.headers.get("authorization")||""; return !!env.ADMIN_PASSWORD && auth === "Bearer "+env.ADMIN_PASSWORD; }
-async function signedCenterRequest(env,path,method="GET",payload){
- const key=env.SUBSCRIPTION_PROJECT_KEY||"",secret=env.SUBSCRIPTION_VERIFICATION_SECRET||"";
- if(!key||!secret) throw new Error("credentials_missing");
- const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\/+$/, "");
- const timestamp=String(Math.floor(Date.now()/1000));
- const rawBody=payload===undefined?"":JSON.stringify(payload);
- const value=method+"\n"+path+"\n"+timestamp+"\n"+rawBody;
- const cryptoKey=await crypto.subtle.importKey("raw",new TextEncoder().encode(secret),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
- const signature=await crypto.subtle.sign("HMAC",cryptoKey,new TextEncoder().encode(value));
- const hex=[...new Uint8Array(signature)].map(x=>x.toString(16).padStart(2,"0")).join("");
- const headers={"X-Project-Key":key,"X-Timestamp":timestamp,"X-Signature":hex};
- if(payload!==undefined) headers["content-type"]="application/json";
- const response=await fetch(centerUrl+path,{method,headers,body:payload===undefined?undefined:rawBody});
- const result=await response.json().catch(()=>({error:"invalid_center_response"}));
- return {response,result};
-}
 async function subscriptionStatus(env){
- const diagnostics={project_key_configured:!!env.SUBSCRIPTION_PROJECT_KEY,verification_token_configured:!!env.SUBSCRIPTION_VERIFICATION_TOKEN,verification_secret_configured:!!env.SUBSCRIPTION_VERIFICATION_SECRET};
- if(!diagnostics.project_key_configured||!diagnostics.verification_token_configured||!diagnostics.verification_secret_configured) return {active:false,unavailable:true,reason:"credentials_missing",diagnostics};
+ const diagnostics={project_key_configured:!!env.SUBSCRIPTION_PROJECT_KEY,verification_token_configured:!!env.SUBSCRIPTION_VERIFICATION_TOKEN};
+ if(!diagnostics.project_key_configured||!diagnostics.verification_token_configured) return {active:false,unavailable:true,reason:"credentials_missing",diagnostics};
+ const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\\/+$/, "");
  try{
-  const {response,result}=await signedCenterRequest(env,"/api/v1/subscription/status","GET");
-  if(!response.ok) return {active:false,unavailable:response.status>=500,reason:result.error||"verification_failed",diagnostics};
-  const s=result.subscription||{};
-  return {active:s.active===true,unavailable:false,reason:null,status:s.status||"not_started",starts_at:s.starts_at||null,ends_at:s.ends_at||null,plan_name:s.plan_name||null,duration_months:s.duration_months??null,price_sar:s.price_sar??null,trial_used:s.trial_used===true,trial_active:s.trial_active===true,next_plan_name:s.selected_plan?.name||null,plans:Array.isArray(s.plans)?s.plans:[],payment_details:s.payment_details||null,pending_payment:s.pending_payment||null,diagnostics};
- }catch(e){return {active:false,unavailable:true,reason:e.message==="credentials_missing"?"credentials_missing":"center_unreachable",diagnostics};}
+  const response=await fetch(centerUrl+"/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
+  const result=await response.json().catch(()=>({error:"invalid_center_response"}));
+  if(!response.ok||result.ok===false) return {active:false,unavailable:response.status>=500,reason:result.reason||result.error||"verification_failed",diagnostics};
+  const startsAt=result.starts_at||null, endsAt=result.ends_at||null;
+  const now=Date.now();
+  const startsMs=startsAt?Date.parse(String(startsAt).replace(" ","T")+"+00:00"):NaN;
+  const endsMs=endsAt?Date.parse(String(endsAt).replace(" ","T")+"+00:00"):NaN;
+  // Temporary complimentary access: allow this project until its already-recorded future subscription begins.
+  const trialActive=result.active!==true && result.status==="expired" && Number.isFinite(startsMs) && Number.isFinite(endsMs) && startsMs>now && endsMs>startsMs;
+  return {active:result.active===true||trialActive,trial_active:trialActive,unavailable:false,reason:null,status:trialActive?"trial":result.status||"not_started",starts_at:startsAt,ends_at:endsAt,plan_name:result.plan_name||null,diagnostics};
+ }catch(e){return {active:false,unavailable:true,reason:"center_unreachable",diagnostics};}
 }
 function subscriptionPage(unavailable=false){
  const title=unavailable?"تعذر التحقق من الاشتراك":"المتجر متوقف مؤقتاً";
@@ -40,14 +31,11 @@ export default {
   const url=new URL(req.url), path=url.pathname, method=req.method;
   // Subscription management is centralized in subscription-center; no separate control Worker is used.
   if(method==="OPTIONS") return withCors(new Response(null,{status:204}));
-  // Keep the storefront catalog and subscription plans visible to customers.
-  // Only validate the central subscription when a customer submits an order.
-  const protectedOrder=path==="/api/orders" && method==="POST";
-  if(protectedOrder){
+  // Keep the owner dashboard reachable, but protect every customer-facing page and API.
+  const adminRequest=path.startsWith("/api/admin/") || path==="/saudi-diet-control" || path==="/saudi-diet-control/" || (url.hostname.startsWith("saudi-diet-control.") && path==="/");
+  if(!adminRequest){
    const subscription=await subscriptionStatus(env);
-   if(!subscription.active){
-    return withCors(json({error:subscription.unavailable?"تعذر التحقق من الاشتراك حالياً":"اشتراك المتجر غير نشط",subscription_inactive:true},subscription.unavailable?503:402));
-   }
+   if(!subscription.active) return subscriptionPage(subscription.unavailable);
   }
   if(path.startsWith("/api/")){
    try {
