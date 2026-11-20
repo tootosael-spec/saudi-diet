@@ -6,15 +6,18 @@ async function body(req){ try{return await req.json()}catch{return {}} }
 async function setting(db,key,fallback=""){ const row=await db.prepare("SELECT value FROM settings WHERE key=?").bind(key).first(); return row?.value ?? fallback; }
 function authorized(req,env){ const auth=req.headers.get("authorization")||""; return !!env.ADMIN_PASSWORD && auth === "Bearer "+env.ADMIN_PASSWORD; }
 async function subscriptionStatus(env,{activate=false}={}){
- const diagnostics={project_key_configured:!!env.SUBSCRIPTION_PROJECT_KEY,secret_configured:!!env.SUBSCRIPTION_SECRET,center_url_configured:!!env.SUBSCRIPTION_CENTER_URL};
- if(!diagnostics.project_key_configured||!diagnostics.secret_configured||!diagnostics.center_url_configured) return {active:false,can_order:false,unavailable:true,reason:"credentials_missing",diagnostics};
+ const diagnostics={project_key_configured:!!env.SUBSCRIPTION_PROJECT_KEY,secret_configured:!!env.SUBSCRIPTION_VERIFICATION_SECRET,center_url_configured:true};
+ if(!diagnostics.project_key_configured||!diagnostics.secret_configured) return {active:false,can_order:false,unavailable:true,reason:"credentials_missing",diagnostics};
  try{
   if(activate) await activateProject(env);
   const result=await getSubscriptionStatus(env);
   return {...result,active:result?.can_order===true,unavailable:false,diagnostics};
  }catch(e){
   const code=String(e.message||"");
-  return {active:false,can_order:false,unavailable:true,reason:code==="subscription_credentials_missing"?"credentials_missing":"center_unreachable",diagnostics};
+  const reason=code==="subscription_credentials_missing"?"credentials_missing":
+   (code==="invalid_project"||code==="invalid_signature"||code==="invalid_signature_headers"?"invalid_project":
+   (code==="project_paused"?"project_paused":"center_unreachable"));
+  return {active:false,can_order:false,unavailable:true,reason,diagnostics};
  }
 }
 function subscriptionPage(unavailable=false){
@@ -27,6 +30,14 @@ export default {
   const url=new URL(req.url), path=url.pathname, method=req.method;
   // Subscription management is centralized in subscription-center; no separate control Worker is used.
   if(method==="OPTIONS") return withCors(new Response(null,{status:204}));
+  // Public read-only diagnostic; it never grants permission to place orders.
+  if(path==="/api/check" && method==="GET"){
+   const status=await subscriptionStatus(env);
+   const reason=status.reason==="credentials_missing"?"credentials_missing":
+    (status.reason==="invalid_project"?"invalid_project":
+    (status.reason==="center_unreachable"?"center_unreachable":"ok"));
+   return withCors(json({project_name:"سعودي دايت",center_status:status.status||"unavailable",reason}));
+  }
   // Keep the storefront catalog and subscription plans visible to customers.
   // Only validate the central subscription when a customer submits an order.
   const protectedOrder=path==="/api/orders" && method==="POST";
