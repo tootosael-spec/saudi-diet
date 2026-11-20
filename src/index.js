@@ -8,7 +8,7 @@ async function subscriptionStatus(env){
  const checkedAt=new Date().toISOString();
  const diagnostics={project_key_configured:!!env.SUBSCRIPTION_PROJECT_KEY,verification_token_configured:!!env.SUBSCRIPTION_VERIFICATION_TOKEN};
  if(!diagnostics.project_key_configured||!diagnostics.verification_token_configured) return {active:false,status:"unavailable",reason:"credentials_missing",checked_at:checkedAt,http_status:null};
- const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\\/+$/, "");
+ const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\/+$/, "");
  try{
   const response=await fetch(centerUrl+"/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
   const result=await response.json().catch(()=>({error:"invalid_center_response"}));
