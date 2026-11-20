@@ -85,6 +85,21 @@ export default {
       if(String(b.password||"")!==env.ADMIN_PASSWORD) return withCors(json({error:"كلمة المرور غير صحيحة"},401));
       return withCors(json({ok:true}));
      }
+     if(path==="/api/admin/owner-payment-settings" && (method==="GET" || method==="POST")){
+      if(!env.PLATFORM_OWNER_KEY || (req.headers.get("authorization")||"") !== "Bearer "+env.PLATFORM_OWNER_KEY) return withCors(json({error:"غير مصرح"},401));
+      if(method==="POST"){
+       const b=await body(req),bank=String(b.bank_name||"").trim().slice(0,100),iban=String(b.iban||"").replace(/\s/g,"").slice(0,34);
+       if(!bank || !/^SA[0-9]{22}$/.test(iban)) return withCors(json({error:"أدخل اسم البنك ورقم آيبان سعودي صحيح يبدأ بـ SA ويتكون من 24 خانة"},400));
+       await env.DB.prepare("UPDATE subscription_payment SET bank_name=?,iban=?,updated_at=CURRENT_TIMESTAMP WHERE id=1").bind(bank,iban).run();
+      }
+      const row=await env.DB.prepare("SELECT bank_name,iban FROM subscription_payment WHERE id=1").first();
+      return withCors(json(row||{bank_name:"",iban:""}));
+     }
+     if(path==="/api/admin/owner-payment-receipt" && method==="GET"){
+      if(!env.PLATFORM_OWNER_KEY || (req.headers.get("authorization")||"") !== "Bearer "+env.PLATFORM_OWNER_KEY) return withCors(json({error:"غير مصرح"},401));
+      const row=await env.DB.prepare("SELECT receipt_data,receipt_mime,receipt_uploaded_at FROM subscription_payment WHERE id=1").first();
+      return withCors(json(row||{}));
+     }
      if(path==="/api/admin/subscription-check" && method==="GET"){
       if(!env.PLATFORM_OWNER_KEY || (req.headers.get("authorization")||"") !== "Bearer "+env.PLATFORM_OWNER_KEY) return withCors(json({error:"غير مصرح"},401));
       return withCors(json(await getLocalSubscription(env)));
@@ -98,6 +113,18 @@ export default {
       return withCors(json({ok:true,subscription:await getLocalSubscription(env)}));
      }
      if(!authorized(req,env)) return withCors(json({error:"يلزم تسجيل الدخول إلى لوحة التحكم"},401));
+     if(path==="/api/admin/payment-settings" && method==="GET"){
+      const row=await env.DB.prepare("SELECT bank_name,iban FROM subscription_payment WHERE id=1").first();
+      return withCors(json(row||{bank_name:"",iban:""}));
+     }
+     if(path==="/api/admin/payment-receipt" && method==="POST"){
+      const b=await body(req),data=String(b.data||""),mime=String(b.mime||"");
+      if(!["image/jpeg","image/png"].includes(mime) || !data.startsWith("data:"+mime+";base64,") || data.length>900000) return withCors(json({error:"الصورة غير صالحة أو حجمها كبير؛ اختر صورة أصغر من 600 كيلوبايت"},400));
+      await env.DB.prepare("UPDATE subscription_payment SET receipt_data=?,receipt_mime=?,receipt_uploaded_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=1").bind(data,mime).run();
+      const row=await env.DB.prepare("SELECT receipt_uploaded_at FROM subscription_payment WHERE id=1").first();
+      return withCors(json({ok:true,uploaded_at:row?.receipt_uploaded_at}));
+     }
+
      if(path==="/api/admin/overview" && method==="GET"){
       const [orders,meals,plans]=await Promise.all([env.DB.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 100").all(),env.DB.prepare("SELECT * FROM meals ORDER BY id DESC").all(),env.DB.prepare("SELECT * FROM plans ORDER BY id DESC").all()]);
       return withCors(json({orders:orders.results,meals:meals.results,plans:plans.results}));
