@@ -1,28 +1,22 @@
+import { activateProject, getSubscriptionStatus, requestSubscriptionPlan } from "./subscriptionClient.js";
 const json = (data, status=200) => new Response(JSON.stringify(data), { status, headers: { "content-type":"application/json; charset=utf-8", "cache-control":"no-store" } });
 const cors = { "access-control-allow-origin":"*", "access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS", "access-control-allow-headers":"content-type,authorization" };
 function withCors(r){ const h=new Headers(r.headers); for(const [k,v] of Object.entries(cors)) h.set(k,v); return new Response(r.body,{status:r.status,headers:h}); }
 async function body(req){ try{return await req.json()}catch{return {}} }
 async function setting(db,key,fallback=""){ const row=await db.prepare("SELECT value FROM settings WHERE key=?").bind(key).first(); return row?.value ?? fallback; }
 function authorized(req,env){ const auth=req.headers.get("authorization")||""; return !!env.ADMIN_PASSWORD && auth === "Bearer "+env.ADMIN_PASSWORD; }
-async function subscriptionStatus(env){
- const checkedAt=new Date().toISOString();
- const diagnostics={project_key_configured:!!env.SUBSCRIPTION_PROJECT_KEY,verification_token_configured:!!env.SUBSCRIPTION_VERIFICATION_TOKEN};
- if(!diagnostics.project_key_configured||!diagnostics.verification_token_configured) return {active:false,unavailable:false,status:"unavailable",reason:"credentials_missing",checked_at:checkedAt,http_status:null};
- const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\/+$/, "");
+async function subscriptionStatus(env,{activate=false}={}){
+ const diagnostics={project_key_configured:!!env.SUBSCRIPTION_PROJECT_KEY,secret_configured:!!env.SUBSCRIPTION_VERIFICATION_SECRET,center_url_configured:true};
+ if(!diagnostics.project_key_configured||!diagnostics.secret_configured) return {active:false,unavailable:true,status:"unavailable",reason:"credentials_missing",diagnostics,http_status:null};
  try{
-  const response=await fetch(centerUrl+"/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
-  const result=await response.json().catch(()=>({error:"invalid_center_response"}));
-  if(!response.ok||result.ok===false) return {active:false,unavailable:response.status>=500||response.status===429,status:result.status||"unavailable",type:result.type||"none",daysLeft:Number(result.daysLeft)||0,reason:result.reason||result.error||"verification_failed",ends_at:result.ends_at||null,checked_at:checkedAt,http_status:response.status};
-  return {
-   active:result.active===true,unavailable:false,status:result.status||(result.active===true?"active":"inactive"),
-   type:result.type||"none",daysLeft:Number(result.daysLeft)||0,
-   starts_at:result.starts_at||null,ends_at:result.ends_at||null,
-   plan_name:result.plan_name||null,price_sar:result.price_sar??null,
-   plans:Array.isArray(result.plans)?result.plans:[],
-   pending_payment:result.pending_payment||null,pending_plan_request:result.pending_plan_request||null,
-   checked_at:checkedAt,http_status:response.status,reason:result.reason||null
-  };
- }catch(e){return {active:false,unavailable:true,status:"unavailable",reason:"center_unreachable",checked_at:checkedAt,http_status:null};}
+  if(activate) await activateProject(env);
+  const result=await getSubscriptionStatus(env);
+  return {...result,active:result?.can_order===true,unavailable:false,diagnostics,http_status:200};
+ }catch(e){
+  const code=String(e.message||"");
+  const reason=code==="subscription_credentials_missing"?"credentials_missing":(code==="invalid_project"||code==="invalid_signature"||code==="invalid_signature_headers"?"invalid_project":(code==="project_paused"?"project_paused":"center_unreachable"));
+  return {active:false,can_order:false,unavailable:true,status:"unavailable",reason,diagnostics,http_status:null};
+ }
 }
 function subscriptionPage(unavailable=false){
  const title=unavailable?"تعذر التحقق من الاشتراك":"المتجر متوقف مؤقتاً";
@@ -38,22 +32,14 @@ export default {
   // It must remain reachable even when the storefront subscription gate is active.
   if(path==="/api/check" && method==="GET"){
    const status=await subscriptionStatus(env);
-   let reason="ok";
-   if(status.reason==="credentials_missing") reason="credentials_missing";
-   else if(status.reason==="invalid_project") reason="invalid_project";
-   else if(status.reason==="center_unreachable" || status.http_status===null) reason="center_unreachable";
-   else if(status.http_status!==200) reason="center_unreachable";
-   return withCors(json({
-    project_name:"سعودي دايت",
-    center_status:status.status||"unavailable",
-    reason
-   }));
+   const reason=status.reason==="credentials_missing"?"credentials_missing":status.reason==="invalid_project"?"invalid_project":status.reason==="center_unreachable"?"center_unreachable":"ok";
+   return withCors(json({project_name:"سعودي دايت",center_status:status.status||"unavailable",reason}));
   }
-  // Keep the owner dashboard reachable, but protect every customer-facing page and API.
-  const adminRequest=path==="/admin.html" || path==="/admin" || path==="/admin/" || path.startsWith("/api/admin/") || path==="/saudi-diet-control" || path==="/saudi-diet-control/" || (url.hostname.startsWith("saudi-diet-control.") && path==="/");
-  if(!adminRequest){
+  // Keep the storefront catalogue visible; validate centrally only when an order is submitted.
+  const protectedOrder=path==="/api/orders" && method==="POST";
+  if(protectedOrder){
    const subscription=await subscriptionStatus(env);
-   if(!subscription.active && !subscription.unavailable) return subscriptionPage(false);
+   if(!subscription.active) return withCors(json({error:subscription.unavailable?"تعذر التحقق من الاشتراك حالياً":"اشتراك المتجر غير نشط",subscription_inactive:true},subscription.unavailable?503:402));
   }
   if(path.startsWith("/api/")){
    try {
@@ -94,20 +80,13 @@ export default {
      if(path==="/api/admin/subscription-request" && method==="POST"){
       const b=await body(req),planCode=String(b.plan_code||"");
       if(!["monthly","yearly"].includes(planCode)) return withCors(json({error:"اختر باقة شهرية أو سنوية"},400));
-      if(!env.SUBSCRIPTION_PROJECT_KEY||!env.SUBSCRIPTION_VERIFICATION_TOKEN) return withCors(json({error:"بيانات الربط مع مركز الاشتراكات غير مضبوطة"},503));
-      const centerUrl=String(env.SUBSCRIPTION_CENTER_URL||"https://subscription-center.tootosael.workers.dev").replace(/\/+$/, "");
       try{
-       const check=await fetch(centerUrl+"/api/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN})});
-       const snapshot=await check.json().catch(()=>null);
-       if(!check.ok||!snapshot||snapshot.ok===false) return withCors(json({error:"تعذر قراءة الخطط من مركز الاشتراكات"},503));
-       if(snapshot.pending_payment||snapshot.pending_plan_request) return withCors(json({error:"لديك طلب اشتراك قيد المراجعة بالفعل"},409));
+       const snapshot=await getSubscriptionStatus(env);
        const plan=(snapshot.plans||[]).find(x=>planCode==="monthly"?(Number(x.duration_months)===1&&x.name==="شهري"):(Number(x.duration_months)===12&&x.name==="سنوي"));
        if(!plan) return withCors(json({error:"الباقة المطلوبة غير متاحة حالياً"},409));
-       const response=await fetch(centerUrl+"/api/request-plan",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({project_key:env.SUBSCRIPTION_PROJECT_KEY,verification_token:env.SUBSCRIPTION_VERIFICATION_TOKEN,plan_id:plan.id})});
-       const result=await response.json().catch(()=>({error:"invalid_center_response"}));
-       if(!response.ok) return withCors(json({error:result.message||result.error||"تعذر إرسال طلب الاشتراك",details:result.error||null},response.status));
-       return withCors(json({ok:true,status:"pending",plan_name:result.plan_name||plan.name,amount_sar:result.amount_sar??plan.price_sar,request_id:result.request_id}));
-      }catch(e){return withCors(json({error:"تعذر الاتصال بمركز الاشتراكات حالياً"},503));}
+       const result=await requestSubscriptionPlan(env,plan.id);
+       return withCors(json(result));
+      }catch(e){return withCors(json({error:e.message==="request_already_pending"?"لديك طلب اشتراك آخر قيد المراجعة":"تعذر الاتصال بمركز الاشتراكات حالياً"},e.message==="request_already_pending"?409:503));}
      }
      if(path==="/api/admin/overview" && method==="GET"){
       const [orders,meals,plans]=await Promise.all([env.DB.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 100").all(),env.DB.prepare("SELECT * FROM meals ORDER BY id DESC").all(),env.DB.prepare("SELECT * FROM plans ORDER BY id DESC").all()]);
