@@ -1,45 +1,58 @@
-import { activateProject, getSubscriptionStatus, requestSubscriptionPlan } from "./subscriptionClient.js";
 const json = (data, status=200) => new Response(JSON.stringify(data), { status, headers: { "content-type":"application/json; charset=utf-8", "cache-control":"no-store" } });
 const cors = { "access-control-allow-origin":"*", "access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS", "access-control-allow-headers":"content-type,authorization" };
 function withCors(r){ const h=new Headers(r.headers); for(const [k,v] of Object.entries(cors)) h.set(k,v); return new Response(r.body,{status:r.status,headers:h}); }
 async function body(req){ try{return await req.json()}catch{return {}} }
 async function setting(db,key,fallback=""){ const row=await db.prepare("SELECT value FROM settings WHERE key=?").bind(key).first(); return row?.value ?? fallback; }
 function authorized(req,env){ const auth=req.headers.get("authorization")||""; return !!env.ADMIN_PASSWORD && auth === "Bearer "+env.ADMIN_PASSWORD; }
-async function subscriptionStatus(env,{activate=false}={}){
- const diagnostics={project_key_configured:!!env.SUBSCRIPTION_PROJECT_KEY,secret_configured:!!env.SUBSCRIPTION_VERIFICATION_SECRET,center_url_configured:true};
- if(!diagnostics.project_key_configured||!diagnostics.secret_configured) return {active:false,unavailable:true,status:"unavailable",reason:"credentials_missing",diagnostics,http_status:null};
- try{
-  if(activate) await activateProject(env);
-  const result=await getSubscriptionStatus(env);
-  return {...result,active:result?.can_order===true,unavailable:false,diagnostics,http_status:200};
- }catch(e){
-  const code=String(e.message||"");
-  const reason=code==="subscription_credentials_missing"?"credentials_missing":(code==="invalid_project"||code==="invalid_signature"||code==="invalid_signature_headers"?"invalid_project":(code==="project_paused"?"project_paused":"center_unreachable"));
-  return {active:false,can_order:false,unavailable:true,status:"unavailable",reason,diagnostics,http_status:null};
- }
+async function getLocalSubscription(env){
+ await env.DB.prepare("INSERT OR IGNORE INTO subscriptions (id,status,plan,trial_used,trial_started_at,trial_ends_at,starts_at,ends_at) VALUES (1,'trial','trial',1,CURRENT_TIMESTAMP,datetime('now','+2 months'),CURRENT_TIMESTAMP,datetime('now','+2 months'))").run();
+ const row=await env.DB.prepare("SELECT * FROM subscriptions WHERE id=1").first();
+ const end=row?.ends_at?new Date(String(row.ends_at).replace(' ','T')+'Z').getTime():0;
+ const active=!!row && ['trial','active'].includes(row.status) && end>Date.now();
+ return {...row,active,days_left:active?Math.ceil((end-Date.now())/86400000):0};
 }
-function subscriptionPage(unavailable=false){
- const title=unavailable?"تعذر التحقق من الاشتراك":"المتجر متوقف مؤقتاً";
- const message=unavailable?"تعذر الاتصال بخدمة الاشتراكات حالياً. يرجى المحاولة بعد قليل.":"انتهت فترة الاشتراك أو تم إيقافه. يرجى التواصل مع إدارة المتجر لتجديد الاشتراك.";
- return new Response(`<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080d0b"><title>${title} | سعودي دايت</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#080d0b;color:#f4f8f4;font-family:system-ui,sans-serif;text-align:center;padding:24px;box-sizing:border-box"><main style="max-width:440px;border:1px solid #40552f;border-radius:22px;padding:30px;background:#101a14"><div style="font-size:42px;margin-bottom:12px">🥗</div><h1 style="color:#b5f34a;font-size:25px">${title}</h1><p style="line-height:1.9;color:#d6e2d8">${message}</p></main></body></html>`,{status:unavailable?503:402,headers:{"content-type":"text/html; charset=utf-8","cache-control":"no-store"}});
+async function sendTelegram(env,message){
+ if(!env.TELEGRAM_BOT_TOKEN||!env.TELEGRAM_CHAT_ID) return false;
+ try{
+  const response=await fetch('https://api.telegram.org/bot'+env.TELEGRAM_BOT_TOKEN+'/sendMessage',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text:message})});
+  return response.ok;
+ }catch{return false;}
+}
+async function runSubscriptionAlerts(env){
+ const s=await getLocalSubscription(env);
+ if(!s.ends_at) return;
+ const end=new Date(String(s.ends_at).replace(' ','T')+'Z').getTime();
+ const remaining=end-Date.now(), day=Math.ceil(remaining/86400000), key=String(s.ends_at);
+ const name='سعودي دايت';
+ if(remaining>0&&day<=7&&day>1&&s.notified_7d_for_end!==key){
+  if(await sendTelegram(env,'⏳ تنبيه اشتراك\nالمشروع: '+name+'\nمتبقي '+day+' أيام على انتهاء الاشتراك.\nتاريخ الانتهاء: '+key))
+   await env.DB.prepare("UPDATE subscriptions SET notified_7d_for_end=? WHERE id=1").bind(key).run();
+ }
+ if(remaining>0&&day<=1&&s.notified_1d_for_end!==key){
+  if(await sendTelegram(env,'⚠️ اشتراك على وشك الانتهاء\nالمشروع: '+name+'\nينتهي خلال 24 ساعة.\nتاريخ الانتهاء: '+key))
+   await env.DB.prepare("UPDATE subscriptions SET notified_1d_for_end=? WHERE id=1").bind(key).run();
+ }
+ if(remaining<=0&&s.notified_expired_for_end!==key){
+  if(await sendTelegram(env,'🔴 انتهى الاشتراك\nالمشروع: '+name+'\nانتهى الاشتراك بتاريخ: '+key+'\nتم إيقاف استقبال الطلبات.'))
+   await env.DB.prepare("UPDATE subscriptions SET notified_expired_for_end=? WHERE id=1").bind(key).run();
+ }
 }
 export default {
  async fetch(req,env){
   const url=new URL(req.url), path=url.pathname, method=req.method;
-  // Subscription management is centralized in subscription-center; no separate control Worker is used.
+  // Subscription is stored locally in this project's D1 database.
   if(method==="OPTIONS") return withCors(new Response(null,{status:204}));
   // Public, read-only diagnostics endpoint. It never grants access to store APIs.
   // It must remain reachable even when the storefront subscription gate is active.
   if(path==="/api/check" && method==="GET"){
-   const status=await subscriptionStatus(env);
-   const reason=status.reason==="credentials_missing"?"credentials_missing":status.reason==="invalid_project"?"invalid_project":status.reason==="center_unreachable"?"center_unreachable":"ok";
-   return withCors(json({project_name:"سعودي دايت",center_status:status.status||"unavailable",reason}));
+   const status=await getLocalSubscription(env);
+   return withCors(json({project_name:"سعودي دايت",subscription_status:status.status,active:status.active,days_left:status.days_left,reason:status.active?"ok":"subscription_inactive"}));
   }
   // Keep the storefront catalogue visible; validate centrally only when an order is submitted.
   const protectedOrder=path==="/api/orders" && method==="POST";
   if(protectedOrder){
-   const subscription=await subscriptionStatus(env);
-   if(!subscription.active) return withCors(json({error:subscription.unavailable?"تعذر التحقق من الاشتراك حالياً":"اشتراك المتجر غير نشط",subscription_inactive:true},subscription.unavailable?503:402));
+   const subscription=await getLocalSubscription(env);
+   if(!subscription.active) return withCors(json({error:"اشتراك المتجر غير نشط",subscription_inactive:true},402));
   }
   if(path.startsWith("/api/")){
    try {
@@ -74,19 +87,18 @@ export default {
      }
      if(!authorized(req,env)) return withCors(json({error:"يلزم تسجيل الدخول إلى لوحة التحكم"},401));
      if(path==="/api/admin/subscription-check" && method==="GET"){
-      const status=await subscriptionStatus(env);
-      return withCors(json(status));
+      return withCors(json(await getLocalSubscription(env)));
      }
-     if(path==="/api/admin/subscription-request" && method==="POST"){
-      const b=await body(req),planCode=String(b.plan_code||"");
-      if(!["monthly","yearly"].includes(planCode)) return withCors(json({error:"اختر باقة شهرية أو سنوية"},400));
-      try{
-       const snapshot=await getSubscriptionStatus(env);
-       const plan=(snapshot.plans||[]).find(x=>planCode==="monthly"?(Number(x.duration_months)===1&&x.name==="شهري"):(Number(x.duration_months)===12&&x.name==="سنوي"));
-       if(!plan) return withCors(json({error:"الباقة المطلوبة غير متاحة حالياً"},409));
-       const result=await requestSubscriptionPlan(env,plan.id);
-       return withCors(json(result));
-      }catch(e){return withCors(json({error:e.message==="request_already_pending"?"لديك طلب اشتراك آخر قيد المراجعة":"تعذر الاتصال بمركز الاشتراكات حالياً"},e.message==="request_already_pending"?409:503));}
+     if(path==="/api/admin/subscription-action" && method==="POST"){
+      const b=await body(req),action=String(b.action||"");
+      if(!["monthly","yearly","suspend"].includes(action)) return withCors(json({error:"الإجراء غير معروف"},400));
+      if(action==="suspend"){
+       await env.DB.prepare("UPDATE subscriptions SET status='suspended',updated_at=CURRENT_TIMESTAMP WHERE id=1").run();
+      }else{
+       const interval=action==="monthly"?"+1 month":"+1 year";
+       await env.DB.prepare("UPDATE subscriptions SET status='active',plan=?,starts_at=COALESCE(starts_at,CURRENT_TIMESTAMP),ends_at=datetime(CASE WHEN ends_at>CURRENT_TIMESTAMP THEN ends_at ELSE CURRENT_TIMESTAMP END,?),updated_at=CURRENT_TIMESTAMP WHERE id=1").bind(action,interval).run();
+      }
+      return withCors(json({ok:true,subscription:await getLocalSubscription(env)}));
      }
      if(path==="/api/admin/overview" && method==="GET"){
       const [orders,meals,plans]=await Promise.all([env.DB.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 100").all(),env.DB.prepare("SELECT * FROM meals ORDER BY id DESC").all(),env.DB.prepare("SELECT * FROM plans ORDER BY id DESC").all()]);
@@ -127,5 +139,8 @@ export default {
    return env.ASSETS.fetch(new Request(target,req));
   }
   return env.ASSETS.fetch(req);
+ },
+ async scheduled(event,env,ctx){
+  ctx.waitUntil(runSubscriptionAlerts(env));
  }
 };
