@@ -6,14 +6,14 @@ async function sign(secret, payload) {
 }
 export async function signedSubscriptionRequest(env, method, path, body = null) {
   const secret = env.SUBSCRIPTION_VERIFICATION_SECRET;
-  const centerUrl = String(env.SUBSCRIPTION_CENTER_URL || "https://subscription-center.tootosael.workers.dev").replace(/\\/+$/, "");
+  const centerUrl = String(env.SUBSCRIPTION_CENTER_URL || "https://subscription-center.tootosael.workers.dev").replace(/\/+$/, "");
   if (!env.SUBSCRIPTION_PROJECT_KEY || !secret) {
     throw new Error("subscription_credentials_missing");
   }
   const raw = body === null ? "" : JSON.stringify(body);
   const timestamp = String(Math.floor(Date.now()/1000));
   const signature = await sign(secret, method+"\n"+path+"\n"+timestamp+"\n"+raw);
-  const response = await fetch(String(env.SUBSCRIPTION_CENTER_URL).replace(/\/+$/,"")+path, {
+  const response = await fetch(centerUrl+path, {
     method,
     headers: {"content-type":"application/json","X-Project-Key":env.SUBSCRIPTION_PROJECT_KEY,"X-Timestamp":timestamp,"X-Signature":signature},
     body: method==="GET" ? undefined : raw,
