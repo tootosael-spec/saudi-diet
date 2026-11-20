@@ -34,10 +34,10 @@ async function loadSubscriptionCheck(){
  try{
   const s=await api('subscription-check');
   const date=v=>{if(!v)return '—';const d=new Date(String(v).replace(' ','T')+'Z');return isNaN(d)?String(v):d.toLocaleString('ar-SA',{dateStyle:'medium',timeStyle:'short'});};
-  const labels={trial:'تجريبي مجاني',active:'نشط',suspended:'موقوف'};
+  const labels={trial:'تجريبي مجاني',active:'نشط',suspended:'موقوف',expired:'منتهي'};
   const planLabels={trial:'تجربة شهرين',monthly:'شهري',yearly:'سنوي'};
   const safe=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const rows=[['الحالة',labels[s.status]||s.status],['الباقة',planLabels[s.plan]||s.plan],['الأيام المتبقية',s.days_left||0],['بداية التجربة',date(s.trial_started_at)],['نهاية التجربة',date(s.trial_ends_at)],['تاريخ انتهاء الاشتراك',date(s.ends_at)],['التجربة المجانية مستخدمة',s.trial_used?'نعم — لا تتكرر':'لا']];
+  const rows=[['الحالة',labels[s.display_status||s.status]||s.status],['الباقة',planLabels[s.plan]||s.plan],['الأيام المتبقية',s.days_left||0],['بداية التجربة',date(s.trial_started_at)],['نهاية التجربة',date(s.trial_ends_at)],['تاريخ انتهاء الاشتراك',date(s.ends_at)],['التجربة المجانية مستخدمة',s.trial_used?'نعم — لا تتكرر':'لا']];
   box.innerHTML=rows.map(x=>'<div class="entry"><strong>'+safe(x[0])+'</strong><span>'+safe(x[1])+'</span></div>').join('');
   if(!s.active)box.innerHTML+='<p class="muted">الطلبات الجديدة متوقفة حتى تفعيل الاشتراك.</p>';
  }catch(e){box.textContent='تعذر تحميل الاشتراك المحلي: '+e.message}
